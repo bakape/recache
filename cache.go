@@ -18,32 +18,7 @@ type Cache struct {
 	buckets    map[uint]map[Key]*record
 	memoryUsed int
 
-	// TODO: Doubly linked list with first and last node hot access for keeping
-	// LRU order
-}
-
-// Data storage unit in the cache. Linked to a single Key on a Frontend.
-type record struct {
-	wg   sync.WaitGroup
-	hash [sha1.Size]byte
-	data []component
-
-	// Time of most recent use of record.
-	//
-	// Must only be accessed with a lock on the parent cache.
-	lru time.Time
-
-	// Memory used by the record, not counting any contained references or
-	// storage infrastructure metadata.
-	//
-	// Must only be accessed with a lock on the parent cache.
-	memoryUsed int
-
-	// Error that occurred during initial data population. This will also be
-	// returned on any readers that are concurrent with population.
-	// Might cause error duplication, but better than returning nothing on
-	// concurrent reads.
-	populationError error
+	lruList linkedList
 }
 
 // Create new cache with specified memory and LRU eviction limits. After either
@@ -58,6 +33,42 @@ func NewCache(memoryLimit uint, lruLimit time.Duration) *Cache {
 		lruLimit:    lruLimit,
 		buckets:     make(map[uint]map[Key]*record),
 	}
+}
+
+// Data storage unit in the cache. Linked to a single Key on a Frontend.
+type record struct {
+	wg sync.WaitGroup
+
+	// Contained data and its SHA1 hash
+	data []component
+	hash [sha1.Size]byte
+
+	// Location of record in cache. Needed for reverse lookup.
+	frontend uint
+	key      Key
+
+	// Error that occurred during initial data population. This will also be
+	// returned on any readers that are concurrent with population.
+	// Might cause error duplication, but better than returning nothing on
+	// concurrent reads.
+	populationError error
+
+	// Time of most recent use of record.
+	//
+	// Must only be accessed with a held lock on the parent cache.
+	lru time.Time
+
+	// Memory used by the record, not counting any contained references or
+	// storage infrastructure metadata.
+	//
+	// Must only be accessed with a held lock on the parent cache.
+	memoryUsed int
+
+	// Keep pointer to node in LRU list, so we can modify the list without
+	// itterating it to find the this record's node.
+	//
+	// Must only be accessed with a held lock on the parent cache.
+	node *node
 }
 
 // Value used to store entries in the cache. Must be a type suitable for being a
@@ -93,35 +104,42 @@ func (c *Cache) NewFrontend(get Getter) *Frontend {
 	return f
 }
 
+// TODO: Explicit exact key match and matcher function eviction
+
+// Evict record from cache
+func (c *Cache) evict(frontend uint, key Key) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.evictWithLock(frontend, key)
+}
+
+// Evict record from cache. Requires lock on c.mu.
+func (c *Cache) evictWithLock(frontend uint, key Key) {
+	rec, ok := c.buckets[frontend][key]
+	if !ok {
+		return
+	}
+	delete(c.buckets[frontend], key)
+	c.lruList.Remove(rec.node)
+	c.memoryUsed -= rec.memoryUsed
+}
+
 // Retrieve or generate data by key and write it to w
 func (f *Frontend) WriteTo(k Key, w io.Writer) (n int64, err error) {
-	f.cache.mu.Lock()
-
-	rec, ok := f.cache.buckets[f.id][k]
-	if !ok {
-		rec = &record{}
-		rec.wg.Add(1) // Block all reads until population
-		f.cache.buckets[f.id][k] = rec
-		// TODO: Insert record to front of LRU linked list
-	} else {
-		// TODO: Move record to front of LRU linked list
-	}
-	rec.lru = time.Now()
-
-	// TODO: Attempt to evict up to the last 2 records due to LRU or memory
-	// constraints
-
-	f.cache.mu.Unlock()
-
+	rec, ok := f.getRecord(k)
 	if !ok {
 		err = f.populate(k, rec)
 		if err != nil {
 			// Propagate error to any concurrent readers
 			rec.populationError = err
 
-			// TODO: Evict from cache. Can be eventual, if needed.
+			f.cache.evict(rec.frontend, rec.key)
 		}
-		rec.wg.Done() // Also unblock any concurrent readers, even on error
+
+		// Also unblock any concurrent readers, even on error.
+		// Having it here also protects from data race on rec.populationError.
+		rec.wg.Done()
+
 		if err != nil {
 			return
 		}
@@ -140,6 +158,46 @@ func (f *Frontend) WriteTo(k Key, w io.Writer) (n int64, err error) {
 		}
 		n += m
 	}
+	return
+}
+
+// Retrieve existing record or create a new one and insert it into the cache
+func (f *Frontend) getRecord(k Key) (rec *record, ok bool) {
+	f.cache.mu.Lock()
+	defer f.cache.mu.Unlock()
+
+	rec, ok = f.cache.buckets[f.id][k]
+	if !ok {
+		rec = &record{
+			frontend: f.id,
+			key:      k,
+		}
+		rec.wg.Add(1) // Block all reads until population
+		f.cache.buckets[f.id][k] = rec
+		rec.node = f.cache.lruList.Prepend(rec)
+	} else {
+		f.cache.lruList.MoveToFront(rec.node)
+	}
+	now := time.Now()
+	rec.lru = now
+
+	// Attempt to evict up to the last 2 records due to LRU or memory
+	// constraints. Doing this here simplifies locking patterns while retaining
+	// good enough eviction eventuality.
+	for i := 0; i < 2; i++ {
+		last := f.cache.lruList.Last()
+		if rec == nil || last == rec {
+			break
+		}
+		if lim := f.cache.memoryLimit; lim != 0 && f.cache.memoryUsed > lim {
+			f.cache.evictWithLock(last.frontend, last.key)
+			continue
+		}
+		if lim := f.cache.lruLimit; lim != 0 && last.lru.Add(lim).After(now) {
+			f.cache.evictWithLock(last.frontend, last.key)
+		}
+	}
+
 	return
 }
 
