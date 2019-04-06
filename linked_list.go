@@ -7,13 +7,17 @@ type linkedList struct {
 
 type node struct {
 	next, previous *node
-	rec            *record
+
+	// Storing the location ofd the node instead of an actual *record to reduce
+	// load on the GC and the amount of information needed to be stored on the
+	// record itself.
+	location recordLocation
 }
 
 // Prepend record to list. Returns pointer to created node.
-func (ll *linkedList) Prepend(rec *record) (n *node) {
+func (ll *linkedList) Prepend(loc recordLocation) (n *node) {
 	n = &node{
-		rec: rec,
+		location: loc,
 	}
 
 	if ll.front == nil {
@@ -30,12 +34,12 @@ func (ll *linkedList) Prepend(rec *record) (n *node) {
 	return
 }
 
-// Return last element data. If list is empty rec=nil.
-func (ll *linkedList) Last() (rec *record) {
+// Return last element data. If list is empty ok=false.
+func (ll *linkedList) Last() (loc recordLocation, ok bool) {
 	if ll.back == nil {
 		return
 	}
-	return ll.back.rec
+	return ll.back.location, true
 }
 
 // Move existing node to front of list

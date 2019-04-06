@@ -1,24 +1,59 @@
 package recache
 
 import (
-	"crypto/sha1"
-	"io"
 	"sync"
 	"time"
 )
 
+var (
+	// Lock that must be held for any access to the Cache instances themselves.
+	// Need not be held during record population.
+	//
+	// Stop the world garbage collection is needed to avoid conflicts with
+	// child eviction propagating to their parents as those.
+	//
+	// This is even more crucial with multiple caches recursing into other
+	// caches. Greatly simplifies locking patterns.
+	cacheMu sync.RWMutex
+
+	// Registry of all created caches. Require cacheMU to be held for access.
+	cacheIDCounter uint
+	caches         = make(map[uint]*Cache)
+)
+
+// Locks/unlocks both the global and the internal cache mutexes in one call
+type jointLock struct {
+	mu sync.Mutex
+}
+
+func (j *jointLock) lock() {
+	cacheMu.RLock()
+	j.mu.Lock()
+}
+
+func (j *jointLock) unlock() {
+	cacheMu.RUnlock()
+	j.mu.Unlock()
+}
+
 // Unified storage for cached records with specific eviction parameters
 type Cache struct {
-	mu          sync.Mutex
-	lruLimit    time.Duration
-	memoryLimit int
-	idCounter   uint
+	// Locks for all cache access, excluding the contained records
+	jointLock
 
-	// record must be a pointer, because it contains a mutex
-	buckets    map[uint]map[Key]*record
-	memoryUsed int
+	// Global ID of cache
+	id uint
 
-	lruList linkedList
+	// Total used memory and limit
+	memoryLimit, memoryUsed int
+
+	// Linked list and limit for quick LRU data order modifications and lookup
+	lruLimit time.Duration
+	lruList  linkedList
+
+	// Storage for each individual frontend
+	frontendIDCounter uint
+	buckets           map[uint]map[Key]recordWithMeta
 }
 
 // Create new cache with specified memory and LRU eviction limits. After either
@@ -26,214 +61,101 @@ type Cache struct {
 // until the requirements are satisfied again. Note that this eviction is
 // eventual and not immediate for optimisation purposes.
 //
-// Pass in zero values to ignore either or both eviction limit.
-func NewCache(memoryLimit uint, lruLimit time.Duration) *Cache {
-	return &Cache{
+// Pass in zero values to ignore either or both eviction limits.
+func NewCache(memoryLimit uint, lruLimit time.Duration) (c *Cache) {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+
+	c = &Cache{
+		id:          cacheIDCounter,
 		memoryLimit: int(memoryLimit),
 		lruLimit:    lruLimit,
-		buckets:     make(map[uint]map[Key]*record),
+		buckets:     make(map[uint]map[Key]recordWithMeta),
 	}
-}
-
-// Data storage unit in the cache. Linked to a single Key on a Frontend.
-type record struct {
-	wg sync.WaitGroup
-
-	// Contained data and its SHA1 hash
-	data []component
-	hash [sha1.Size]byte
-
-	// Location of record in cache. Needed for reverse lookup.
-	frontend uint
-	key      Key
-
-	// Error that occurred during initial data population. This will also be
-	// returned on any readers that are concurrent with population.
-	// Might cause error duplication, but better than returning nothing on
-	// concurrent reads.
-	populationError error
-
-	// Time of most recent use of record.
-	//
-	// Must only be accessed with a held lock on the parent cache.
-	lru time.Time
-
-	// Memory used by the record, not counting any contained references or
-	// storage infrastructure metadata.
-	//
-	// Must only be accessed with a held lock on the parent cache.
-	memoryUsed int
-
-	// Keep pointer to node in LRU list, so we can modify the list without
-	// itterating it to find the this record's node.
-	//
-	// Must only be accessed with a held lock on the parent cache.
-	node *node
-}
-
-// Value used to store entries in the cache. Must be a type suitable for being a
-// key in a Go map.
-type Key interface{}
-
-// Generates fresh cache records for the given key. These records wil be stored
-// by the cache engine and must not be modified after Getter returns.
-//
-// Getter must be thread-safe.
-type Getter func(Key) (RecordWriter, error)
-
-// A frontend for accessing the cache contents
-type Frontend struct {
-	id     uint
-	cache  *Cache
-	getter Getter
+	cacheIDCounter++
+	return c
 }
 
 // Create new Frontend for accessing the cache.
+// A Frontend must only be created using this method.
 //
 // get() will be used for generating fresh cache records for the given key by
-// the cache engine. These records wil be stored by the cache engine and must
+// the cache engine. These records will be stored by the cache engine and must
 // not be modified after get() returns. get() must be thread-safe.
 func (c *Cache) NewFrontend(get Getter) *Frontend {
+	c.lock()
+	defer c.unlock()
+
 	f := &Frontend{
-		id:     c.idCounter,
+		id:     c.frontendIDCounter,
 		cache:  c,
 		getter: get,
 	}
-	c.buckets[c.idCounter] = make(map[Key]*record)
-	c.idCounter++
+	c.buckets[c.frontendIDCounter] = make(map[Key]recordWithMeta)
+	c.frontendIDCounter++
 	return f
 }
 
-// TODO: Explicit exact key match and matcher function eviction
+// Get or create a new record in the cache.
+// fresh=true, if record is freshly created and requires population.
+func (c *Cache) getRecord(frontend uint, key Key) (rec *record, fresh bool) {
+	c.lock()
+	defer c.unlock()
 
-// Evict record from cache
-func (c *Cache) evict(frontend uint, key Key) {
+	recWithMeta, ok := c.buckets[frontend][key]
+	if !ok {
+		recWithMeta = recordWithMeta{
+			node: c.lruList.Prepend(recordLocation{
+				frontend: frontend,
+				key:      key,
+			}),
+			rec: new(record),
+		}
+		recWithMeta.rec.wg.Add(1) // Block all reads until population
+	} else {
+		c.lruList.MoveToFront(recWithMeta.node)
+	}
+	recWithMeta.lru = time.Now()
+	c.buckets[frontend][key] = recWithMeta
+
+	return recWithMeta.rec, !ok
+}
+
+// Set record used memory
+func (c *Cache) setUsedMemory(loc recordLocation, memoryUsed int) {
+	c.lock()
+	defer c.unlock()
+
+	rec, ok := c.buckets[loc.frontend][loc.key]
+	if ok {
+		return // Already evicted
+	}
+	rec.memoryUsed = memoryUsed
+	c.memoryUsed += memoryUsed
+}
+
+// Register a record as being used in another record
+func registerInclusion(parent, child intercacheRecordLocation) {
+	cacheMu.RLock()
+	defer cacheMu.RUnlock()
+
+	c := caches[child.cache]
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.evictWithLock(frontend, key)
-}
 
-// Evict record from cache. Requires lock on c.mu.
-func (c *Cache) evictWithLock(frontend uint, key Key) {
-	rec, ok := c.buckets[frontend][key]
+	rec, ok := c.buckets[child.frontend][child.key]
 	if !ok {
-		return
+		return // Already evicted
 	}
-	delete(c.buckets[frontend], key)
-	c.lruList.Remove(rec.node)
-	c.memoryUsed -= rec.memoryUsed
+	rec.includedIn = append(rec.includedIn, parent)
 }
 
-// Retrieve or generate data by key and write it to w
-func (f *Frontend) WriteTo(k Key, w io.Writer) (n int64, err error) {
-	rec, ok := f.getRecord(k)
-	if !ok {
-		err = f.populate(k, rec)
-		if err != nil {
-			// Propagate error to any concurrent readers
-			rec.populationError = err
+// Evict record from cache on the next garbage collection
+func (c *Cache) scheduleEviction(frontend uint, key Key) {
+	c.lock()
+	defer c.unlock()
 
-			f.cache.evict(rec.frontend, rec.key)
-		}
-
-		// Also unblock any concurrent readers, even on error.
-		// Having it here also protects from data race on rec.populationError.
-		rec.wg.Done()
-
-		if err != nil {
-			return
-		}
-	}
-
-	// Prevents a record being read concurrently before it is populated.
-	// A record is immutable after initial population and this will not block
-	// after it.
-	rec.wg.Wait()
-
-	var m int64
-	for _, c := range rec.data {
-		m, err = c.WriteTo(w)
-		if err != nil {
-			return
-		}
-		n += m
-	}
-	return
+	// TODO: Schedule eviction
 }
 
-// Retrieve existing record or create a new one and insert it into the cache
-func (f *Frontend) getRecord(k Key) (rec *record, ok bool) {
-	f.cache.mu.Lock()
-	defer f.cache.mu.Unlock()
-
-	rec, ok = f.cache.buckets[f.id][k]
-	if !ok {
-		rec = &record{
-			frontend: f.id,
-			key:      k,
-		}
-		rec.wg.Add(1) // Block all reads until population
-		f.cache.buckets[f.id][k] = rec
-		rec.node = f.cache.lruList.Prepend(rec)
-	} else {
-		f.cache.lruList.MoveToFront(rec.node)
-	}
-	now := time.Now()
-	rec.lru = now
-
-	// Attempt to evict up to the last 2 records due to LRU or memory
-	// constraints. Doing this here simplifies locking patterns while retaining
-	// good enough eviction eventuality.
-	for i := 0; i < 2; i++ {
-		last := f.cache.lruList.Last()
-		if rec == nil || last == rec {
-			break
-		}
-		if lim := f.cache.memoryLimit; lim != 0 && f.cache.memoryUsed > lim {
-			f.cache.evictWithLock(last.frontend, last.key)
-			continue
-		}
-		if lim := f.cache.lruLimit; lim != 0 && last.lru.Add(lim).After(now) {
-			f.cache.evictWithLock(last.frontend, last.key)
-		}
-	}
-
-	return
-}
-
-// TODO: Method for writing to http.ResponseWriter with ETag handling and Gzip
-// setting
-
-// Populates a record using the registered Getter
-func (f *Frontend) populate(k Key, rec *record) (err error) {
-	rw, err := f.getter(k)
-	if err != nil {
-		return
-	}
-
-	// Flush any unclosed gzip buffers
-	err = rw.flushPending(true)
-	if err != nil {
-		return
-	}
-
-	rec.data = rw.data
-	for _, d := range rec.data {
-		rec.memoryUsed += d.Size()
-		for i, b := range d.Hash() {
-			rec.hash[i] += b
-		}
-	}
-
-	f.cache.mu.Lock()
-	defer f.cache.mu.Unlock()
-
-	// Check record still in cache before size assignment. It might have been
-	// evicted.
-	_, ok := f.cache.buckets[f.id][k]
-	if ok {
-		f.cache.memoryUsed += rec.memoryUsed
-	}
-
-	return
-}
+// TODO: Evict all method

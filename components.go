@@ -5,7 +5,7 @@ import (
 	"io"
 )
 
-// Contains either a buffer or
+// Contains either a buffer or a reference to another record
 type component interface {
 	io.WriterTo
 	Size() int
