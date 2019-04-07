@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	// Registry of all created caches. Require cacheMU to be held for access.
+	// Registry of all created caches. Require cacheMu to be held for access.
 	cacheMu        sync.RWMutex
 	cacheIDCounter uint
 	caches         = make(map[uint]*Cache)

@@ -37,7 +37,7 @@ type recordWithMeta struct {
 	includedIn []intercacheRecordLocation
 
 	// The record itself. Has a separate lock and can be modified without the
-	// lock on the cache or the global cacheMu held.
+	// lock on the cache mutex held.
 	//
 	// Record must be a pointer, because it contains mutexes.
 	rec *record
