@@ -73,7 +73,7 @@ func (f *Frontend) getGeneratedRecord(k Key) (rec *record, err error) {
 			// Propagate error to any concurrent readers
 			rec.populationError = err
 
-			f.cache.scheduleEviction(f.id, k)
+			f.cache.evict(f.id, k)
 		}
 
 		// Also unblock any concurrent readers, even on error.

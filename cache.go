@@ -6,40 +6,23 @@ import (
 )
 
 var (
-	// Lock that must be held for any access to the Cache instances themselves.
-	// Need not be held during record population.
-	//
-	// Stop the world garbage collection is needed to avoid conflicts with
-	// child eviction propagating to their parents as those.
-	//
-	// This is even more crucial with multiple caches recursing into other
-	// caches. Greatly simplifies locking patterns.
-	cacheMu sync.RWMutex
-
 	// Registry of all created caches. Require cacheMU to be held for access.
+	cacheMu        sync.RWMutex
 	cacheIDCounter uint
 	caches         = make(map[uint]*Cache)
 )
 
-// Locks/unlocks both the global and the internal cache mutexes in one call
-type jointLock struct {
-	mu sync.Mutex
-}
-
-func (j *jointLock) lock() {
+// Get cache from registry by ID
+func getCache(id uint) *Cache {
 	cacheMu.RLock()
-	j.mu.Lock()
-}
-
-func (j *jointLock) unlock() {
-	cacheMu.RUnlock()
-	j.mu.Unlock()
+	defer cacheMu.RUnlock()
+	return caches[id]
 }
 
 // Unified storage for cached records with specific eviction parameters
 type Cache struct {
 	// Locks for all cache access, excluding the contained records
-	jointLock
+	mu sync.Mutex
 
 	// Global ID of cache
 	id uint
@@ -83,8 +66,8 @@ func NewCache(memoryLimit uint, lruLimit time.Duration) (c *Cache) {
 // the cache engine. These records will be stored by the cache engine and must
 // not be modified after get() returns. get() must be thread-safe.
 func (c *Cache) NewFrontend(get Getter) *Frontend {
-	c.lock()
-	defer c.unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	f := &Frontend{
 		id:     c.frontendIDCounter,
@@ -99,8 +82,8 @@ func (c *Cache) NewFrontend(get Getter) *Frontend {
 // Get or create a new record in the cache.
 // fresh=true, if record is freshly created and requires population.
 func (c *Cache) getRecord(frontend uint, key Key) (rec *record, fresh bool) {
-	c.lock()
-	defer c.unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	recWithMeta, ok := c.buckets[frontend][key]
 	if !ok {
@@ -115,16 +98,39 @@ func (c *Cache) getRecord(frontend uint, key Key) (rec *record, fresh bool) {
 	} else {
 		c.lruList.MoveToFront(recWithMeta.node)
 	}
-	recWithMeta.lru = time.Now()
+	now := time.Now()
+	recWithMeta.lru = now
 	c.buckets[frontend][key] = recWithMeta
+
+	// Attempt to evict up to the last 2 records due to LRU or memory
+	// constraints. Doing this here simplifies locking patterns while retaining
+	// good enough eviction eventuality.
+	for i := 0; i < 2; i++ {
+		last, ok := c.lruList.Last()
+		if !ok {
+			break
+		}
+		if c.memoryLimit != 0 && c.memoryUsed > c.memoryLimit {
+			c.evictWithLock(last.frontend, last.key)
+			continue
+		}
+		if c.lruLimit != 0 {
+			lru := c.buckets[last.frontend][last.key].lru
+			if lru.Add(c.lruLimit).After(now) {
+				c.evictWithLock(last.frontend, last.key)
+				continue
+			}
+		}
+		break
+	}
 
 	return recWithMeta.rec, !ok
 }
 
 // Set record used memory
 func (c *Cache) setUsedMemory(loc recordLocation, memoryUsed int) {
-	c.lock()
-	defer c.unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	rec, ok := c.buckets[loc.frontend][loc.key]
 	if ok {
@@ -136,10 +142,7 @@ func (c *Cache) setUsedMemory(loc recordLocation, memoryUsed int) {
 
 // Register a record as being used in another record
 func registerInclusion(parent, child intercacheRecordLocation) {
-	cacheMu.RLock()
-	defer cacheMu.RUnlock()
-
-	c := caches[child.cache]
+	c := getCache(child.cache)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -150,12 +153,37 @@ func registerInclusion(parent, child intercacheRecordLocation) {
 	rec.includedIn = append(rec.includedIn, parent)
 }
 
-// Evict record from cache on the next garbage collection
-func (c *Cache) scheduleEviction(frontend uint, key Key) {
-	c.lock()
-	defer c.unlock()
+// Evict record from cache
+func evict(cache, frontend uint, key Key) {
+	getCache(cache).evict(frontend, key)
+}
 
-	// TODO: Schedule eviction
+// Evict record from cache
+func (c *Cache) evict(frontend uint, key Key) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.evictWithLock(frontend, key)
+}
+
+// Evict record from cache. Requires lock on c.mu.
+func (c *Cache) evictWithLock(frontend uint, key Key) {
+	rec, ok := c.buckets[frontend][key]
+	if !ok {
+		return
+	}
+	delete(c.buckets[frontend], key)
+	c.lruList.Remove(rec.node)
+	c.memoryUsed -= rec.memoryUsed
+
+	for _, ch := range rec.includedIn {
+		if ch.cache == c.id {
+			// Hot path to reduce lock contention
+			c.evictWithLock(ch.frontend, ch.key)
+		} else {
+			// Separate goroutine to prevent lock intersection
+			go evict(ch.cache, ch.frontend, ch.key)
+		}
+	}
 }
 
 // TODO: Evict all method

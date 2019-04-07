@@ -19,13 +19,12 @@ var (
 // Provides utility methods for building record buffers and recursive record
 // trees
 type RecordWriter struct {
+	compressing     bool // Currently compressing data into a buffer
 	cache, frontend uint
 	key             Key
-
-	compressing bool // Currently compressing data into a buffer
-	gzWriter    *gzip.Writer
-	pending     bytes.Buffer
-	data        []component
+	gzWriter        *gzip.Writer
+	pending         bytes.Buffer
+	data            []component
 }
 
 // Write non-gzipped data to the record for storage
