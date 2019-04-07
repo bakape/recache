@@ -116,7 +116,7 @@ func (c *Cache) getRecord(frontend uint, key Key) (rec *record, fresh bool) {
 		}
 		if c.lruLimit != 0 {
 			lru := c.buckets[last.frontend][last.key].lru
-			if lru.Add(c.lruLimit).After(now) {
+			if lru.Add(c.lruLimit).Before(now) {
 				c.evictWithLock(last.frontend, last.key)
 				continue
 			}
