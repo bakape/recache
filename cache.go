@@ -186,4 +186,32 @@ func (c *Cache) evictWithLock(frontend uint, key Key) {
 	}
 }
 
-// TODO: Evict all method
+// The all keys of specific frontend.
+func (c *Cache) evictFrontend(frontend uint) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.evictFrontendWithLock(frontend)
+}
+
+// The all keys of specific frontend. Requires lock on c.mu.
+func (c *Cache) evictFrontendWithLock(frontend uint) {
+	// Make copy to prevent itterator invalidation
+	m := c.buckets[frontend]
+	keys := make([]Key, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+
+	for _, k := range keys {
+		c.evictWithLock(frontend, k)
+	}
+}
+
+// Evict all records from cache
+func (c *Cache) EvictAll() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i := uint(0); i < c.frontendIDCounter; i++ {
+		c.evictFrontendWithLock(i)
+	}
+}

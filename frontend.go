@@ -124,4 +124,14 @@ func (f *Frontend) WriteHTTP(k Key, w http.ResponseWriter, r *http.Request,
 	return rec.WriteTo(w)
 }
 
-// TODO: Explicit exact key match, all record and matcher function eviction
+// Evict a record by key, if any
+func (f *Frontend) Evict(k Key) {
+	f.cache.evict(f.id, k)
+}
+
+// Evict all records from frontend
+func (f *Frontend) EvictAll() {
+	f.cache.evictFrontend(f.id)
+}
+
+// TODO: Matcher function eviction
