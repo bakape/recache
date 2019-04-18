@@ -2,7 +2,9 @@ package recache
 
 import (
 	"crypto/sha1"
+	"encoding/base64"
 	"io"
+	"net/http"
 )
 
 // Value used to store entries in the cache. Must be a type suitable for being a
@@ -21,9 +23,6 @@ type Frontend struct {
 	cache  *Cache
 	getter Getter
 }
-
-// TODO: Method for writing to http.ResponseWriter with ETag handling and Gzip
-// encoding setting
 
 // Populates a record using the registered Getter
 func (f *Frontend) populate(k Key, rec *record) (err error) {
@@ -53,12 +52,20 @@ func (f *Frontend) populate(k Key, rec *record) (err error) {
 		for _, d := range rec.data {
 			memoryUsed += d.Size()
 
-			// Hash the child hashed to better propagate changes
+			// Hash the child hash to better propagate changes
 			arr := d.Hash()
 			h.Write(arr[:])
 		}
 		copy(rec.hash[:], h.Sum(nil))
 	}
+
+	// Known size, so using array on the stack instead of heap allocation
+	var b [28 + 2]byte
+	b[0] = '"'
+	base64.StdEncoding.Encode(b[1:], rec.hash[:])
+	b[29] = '"'
+	rec.eTag = string(b[:])
+
 	f.cache.setUsedMemory(recordLocation{f.id, k}, memoryUsed)
 
 	return
@@ -96,6 +103,24 @@ func (f *Frontend) WriteTo(k Key, w io.Writer) (n int64, err error) {
 	if err != nil {
 		return
 	}
+	return rec.WriteTo(w)
+}
+
+// Retrieve or generate data by key and write it to w.
+// Writes ETag to w and returns 304 on ETag match without writing data.
+// Sets "Content-Encoding" header to "gzip".
+func (f *Frontend) WriteHTTP(k Key, w http.ResponseWriter, r *http.Request,
+) (n int64, err error) {
+	rec, err := f.getGeneratedRecord(k)
+	if err != nil {
+		return
+	}
+	if r.Header.Get("If-None-Match") == rec.eTag {
+		w.WriteHeader(304)
+		return
+	}
+
+	r.Header.Set("Content-Encoding", "gzip")
 	return rec.WriteTo(w)
 }
 

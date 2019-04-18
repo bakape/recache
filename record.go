@@ -50,6 +50,7 @@ type record struct {
 	// Contained data and its SHA1 hash
 	data []component
 	hash [sha1.Size]byte
+	eTag string // generated from hash
 
 	// Error that occurred during initial data population. This will also be
 	// returned on any readers that are concurrent with population.
