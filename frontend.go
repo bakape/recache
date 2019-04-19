@@ -11,9 +11,7 @@ import (
 // key in a Go map.
 type Key interface{}
 
-// Generates fresh cache records for the given key. These records wil be stored
-// by the cache engine and must not be modified after Getter returns.
-//
+// Generates fresh cache records for the given key by writing to RecordWriter.
 // Getter must be thread-safe.
 type Getter func(Key, *RecordWriter) error
 
