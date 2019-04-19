@@ -195,16 +195,20 @@ func (c *Cache) evictFrontend(frontend uint) {
 
 // The all keys of specific frontend. Requires lock on c.mu.
 func (c *Cache) evictFrontendWithLock(frontend uint) {
-	// Make copy to prevent itterator invalidation
+	for _, k := range c.keys(frontend) {
+		c.evictWithLock(frontend, k)
+	}
+}
+
+// Make copy of frontend keys to prevent itterator invalidation.
+// Requires lock on c.mu.
+func (c *Cache) keys(frontend uint) []Key {
 	m := c.buckets[frontend]
 	keys := make([]Key, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
-
-	for _, k := range keys {
-		c.evictWithLock(frontend, k)
-	}
+	return keys
 }
 
 // Evict all records from cache
@@ -214,4 +218,34 @@ func (c *Cache) EvictAll() {
 	for i := uint(0); i < c.frontendIDCounter; i++ {
 		c.evictFrontendWithLock(i)
 	}
+}
+
+// Evict keys from frontend using matcher function fn.
+// fn returns true, if a key must be evicted.
+func (c *Cache) evictByFunc(frontend uint, fn func(Key) (bool, error),
+) (err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	var (
+		b     = c.buckets[frontend]
+		evict bool
+	)
+	for _, k := range c.keys(frontend) {
+		// Check, if key not already evicted by recursive eviction, to reduce
+		// potentially expensive matcher function calls
+		if _, ok := b[k]; !ok {
+			continue
+		}
+
+		evict, err = fn(k)
+		if err != nil {
+			return
+		}
+		if evict {
+			c.evictWithLock(frontend, k)
+		}
+	}
+
+	return
 }

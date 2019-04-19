@@ -60,7 +60,7 @@ func (f *Frontend) populate(k Key, rec *record) (err error) {
 	}
 
 	// Known size, so using array on the stack instead of heap allocation
-	var b [28 + 2]byte
+	var b [30]byte
 	b[0] = '"'
 	base64.StdEncoding.Encode(b[1:], rec.hash[:])
 	b[29] = '"'
@@ -134,4 +134,8 @@ func (f *Frontend) EvictAll() {
 	f.cache.evictFrontend(f.id)
 }
 
-// TODO: Matcher function eviction
+// Evict keys from frontend using matcher function fn.
+// fn returns true, if a key must be evicted.
+func (f *Frontend) EvictByFunc(fn func(Key) (bool, error)) error {
+	return f.cache.evictByFunc(f.id, fn)
+}
