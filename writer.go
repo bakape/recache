@@ -71,8 +71,6 @@ func (rw *RecordWriter) ReadFrom(r io.Reader) (n int64, err error) {
 			return
 		}
 	}
-
-	return
 }
 
 // Include data from passed frontend by key and link it to rw.
