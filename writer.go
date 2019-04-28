@@ -54,17 +54,24 @@ func (rw *RecordWriter) ReadFrom(r io.Reader) (n int64, err error) {
 		buf = buffPool.Get().([]byte)
 	)
 	defer buffPool.Put(buf)
+
 	for {
 		m, err = r.Read(buf)
 		n += int64(m)
-		if err != nil {
+		switch err {
+		case nil:
+			_, err = rw.Write(buf[:m])
+			if err != nil {
+				return
+			}
+		case io.EOF:
+			err = nil
 			return
-		}
-		_, err = rw.Write(buf[:m])
-		if err != nil {
+		default:
 			return
 		}
 	}
+
 	return
 }
 
