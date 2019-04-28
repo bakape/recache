@@ -44,7 +44,7 @@ func (rw *RecordWriter) Write(p []byte) (n int, err error) {
 		}
 		rw.compressing = true
 	}
-	return rw.pending.Write(p)
+	return rw.gzWriter.Write(p)
 }
 
 // Read non-gzipped data from r and write it to the record for storage
@@ -126,6 +126,7 @@ func (rw *RecordWriter) flushPending(final bool) (err error) {
 		}
 		buf.hash = sha1.Sum(buf.data)
 
+		rw.data = append(rw.data, buf)
 		rw.compressing = false
 	}
 	return
