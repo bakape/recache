@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"testing"
 )
 
@@ -28,53 +29,53 @@ func TestGetRecord(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		AssertEquals(t, unzip(t, &w), fmt.Sprintf(`"%s"`, key))
+		assertEquals(t, unzip(t, &w), fmt.Sprintf(`"%s"`, key))
+	}
+
+	// Initial population
+	run()
+
+	// Read after the data has been populated and made immutable
+	run()
+}
+
+func TestGetRecordConcurrentFetches(t *testing.T) {
+	t.Parallel()
+
+	var (
+		cache = NewCache(0, 0)
+		f     = cache.NewFrontend(dummyGetter)
+		wg    sync.WaitGroup
+	)
+	wg.Add(6)
+
+	const key = "key1"
+
+	run := func() {
+		for k := 0; k < 3; k++ {
+			go func(k int) {
+				defer wg.Done()
+
+				var w bytes.Buffer
+				_, err := f.WriteTo(key, &w)
+				if err != nil {
+					t.Fatal(err)
+				}
+				assertEquals(t, unzip(t, &w), fmt.Sprintf(`"%s"`, key))
+			}(k)
+		}
 	}
 
 	// Initial population and 2 caches reads concurrently
 	run()
 
-	// 3 reads after the data has been populated and made
-	// immutable
+	// 3 reads after the data has been populated and madeimmutable
 	run()
+
+	wg.Wait()
 }
 
-// func TestGetRecordConcurrentFetches(t *testing.T) {
-// 	t.Parallel()
-
-// 	var (
-// 		cache = NewCache(0, 0)
-// 		f     = cache.NewFrontend(dummyGetter)
-// 		wg    sync.WaitGroup
-// 	)
-// 	wg.Add(6)
-
-// 	const key = "key1"
-
-// 	run := func() {
-// 		for k := 0; k < 3; k++ {
-// 			go func(k int) {
-// 				defer wg.Done()
-
-// 				var w bytes.Buffer
-// 				_, err := f.WriteTo(key, &w)
-// 				if err != nil {
-// 					t.Fatal(err)
-// 				}
-// 				AssertEquals(t, unzip(t, &w), key)
-// 			}(k)
-// 		}
-// 	}
-
-// 	// Initial population and 2 caches reads concurrently
-// 	run()
-
-// 	// 3 reads after the data has been populated and made
-// 	// immutable
-// 	run()
-
-// 	wg.Wait()
-// }
+// TODO: Test concurrent keys fetches
 
 // func TestGetRecordConcurentFrontends(t *testing.T) {
 // 	t.Parallel()

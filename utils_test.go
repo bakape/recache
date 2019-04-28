@@ -11,8 +11,8 @@ import (
 	"github.com/onsi/gomega"
 )
 
-// AssertJSON equality to unencoded data
-func AssertJSON(t *testing.T, r io.Reader, std interface{}) {
+// assertJSON equality to unencoded data
+func assertJSON(t *testing.T, r io.Reader, std interface{}) {
 	t.Helper()
 
 	res, err := ioutil.ReadAll(r)
@@ -34,19 +34,19 @@ func AssertJSON(t *testing.T, r io.Reader, std interface{}) {
 	gomega.NewGomegaWithT(t).Expect(res).To(gomega.MatchJSON(stdJSON))
 }
 
-// LogUnexpected fails the test and prints the values in an
+// logUnexpected fails the test and prints the values in an
 // `expected: X got: Y` format
-func LogUnexpected(t *testing.T, expected, got interface{}) {
+func logUnexpected(t *testing.T, expected, got interface{}) {
 	t.Helper()
 	t.Fatalf("\nexpected: %#v\ngot:      %#v", expected, got)
 }
 
 // AssertDeepEquals asserts two values are deeply equal or fails the test, if
 // not
-func AssertEquals(t *testing.T, res, std interface{}) {
+func assertEquals(t *testing.T, res, std interface{}) {
 	t.Helper()
 	if !reflect.DeepEqual(res, std) {
-		LogUnexpected(t, std, res)
+		logUnexpected(t, std, res)
 	}
 }
 

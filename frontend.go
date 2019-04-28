@@ -83,13 +83,13 @@ func (f *Frontend) getGeneratedRecord(k Key) (rec *record, err error) {
 
 		// Also unblock any concurrent readers, even on error.
 		// Having it here also protects from data race on rec.populationError.
-		rec.wg.Done()
+		rec.semaphore.Unblock()
 	}
 
 	// Prevents a record being read concurrently before it is populated.
 	// A record is immutable after initial population and this will not block
 	// after it.
-	rec.wg.Wait()
+	rec.semaphore.Wait()
 	err = rec.populationError
 
 	return

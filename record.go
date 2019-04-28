@@ -3,7 +3,6 @@ package recache
 import (
 	"crypto/sha1"
 	"io"
-	"sync"
 	"time"
 )
 
@@ -45,7 +44,7 @@ type recordWithMeta struct {
 
 // Data storage unit in the cache. Linked to a single Key on a Frontend.
 type record struct {
-	wg sync.WaitGroup
+	semaphore semaphore
 
 	// Contained data and its SHA1 hash
 	data []component
@@ -59,7 +58,7 @@ type record struct {
 	populationError error
 }
 
-func (r record) WriteTo(w io.Writer) (n int64, err error) {
+func (r *record) WriteTo(w io.Writer) (n int64, err error) {
 	var m int64
 	for _, c := range r.data {
 		m, err = c.WriteTo(w)

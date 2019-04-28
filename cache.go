@@ -94,7 +94,7 @@ func (c *Cache) getRecord(frontend uint, key Key) (rec *record, fresh bool) {
 			}),
 			rec: new(record),
 		}
-		recWithMeta.rec.wg.Add(1) // Block all reads until population
+		recWithMeta.rec.semaphore.Init() // Block all reads until population
 	} else {
 		c.lruList.MoveToFront(recWithMeta.node)
 	}
@@ -133,7 +133,7 @@ func (c *Cache) setUsedMemory(loc recordLocation, memoryUsed int) {
 	defer c.mu.Unlock()
 
 	rec, ok := c.buckets[loc.frontend][loc.key]
-	if ok {
+	if !ok {
 		return // Already evicted
 	}
 	rec.memoryUsed = memoryUsed
