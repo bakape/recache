@@ -1,0 +1,3 @@
+language: go
+dist: xenial
+script: GO111MODULE=on go test --race ./...
