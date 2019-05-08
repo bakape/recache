@@ -118,7 +118,9 @@ func (f *Frontend) WriteHTTP(k Key, w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	r.Header.Set("Content-Encoding", "gzip")
+	h := w.Header()
+	h.Set("Content-Encoding", "gzip")
+	h.Set("ETag", rec.eTag)
 	return rec.WriteTo(w)
 }
 

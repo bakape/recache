@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http/httptest"
 	"strconv"
 	"sync"
 	"testing"
@@ -181,4 +182,48 @@ func TestGetRecordConcurentCaches(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func TestWriteHTTP(t *testing.T) {
+	t.Parallel()
+
+	var etag string
+
+	cache := NewCache(0, 0)
+	f := cache.NewFrontend(dummyGetter)
+
+	cases := [...]struct {
+		name string
+	}{
+		{"first request"},
+		{"no etag match"},
+		{"etag match"},
+	}
+
+	for i := range cases {
+		c := cases[i]
+		t.Run(c.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest("GET", "/", nil)
+			if i == 2 {
+				req.Header.Set("If-None-Match", etag)
+			}
+
+			_, err := f.WriteHTTP(1, rec, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch i {
+			case 0:
+				etag = rec.Header().Get("ETag")
+				if etag == "" {
+					t.Fatal("no etag set")
+				}
+			case 1:
+				assertEquals(t, rec.Header().Get("ETag"), etag)
+			case 2:
+				assertEquals(t, rec.Code, 304)
+			}
+		})
+	}
 }
