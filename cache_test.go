@@ -10,9 +10,8 @@ import (
 	"testing"
 )
 
-// TODO: Test evictions
-
-// TODO: Test with concurrent caches and evictions
+// TODO: Test with concurrent caches and evictions.
+// Must assert state of caches and linked lists after it.
 
 func TestGetRecordConcurentCaches(t *testing.T) {
 	t.Parallel()
