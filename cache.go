@@ -55,6 +55,7 @@ func NewCache(memoryLimit uint, lruLimit time.Duration) (c *Cache) {
 		lruLimit:    lruLimit,
 		buckets:     make(map[uint]map[Key]recordWithMeta),
 	}
+	caches[cacheIDCounter] = c
 	cacheIDCounter++
 	return c
 }

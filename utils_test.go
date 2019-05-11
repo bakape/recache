@@ -12,14 +12,8 @@ import (
 )
 
 // assertJSON equality to unencoded data
-func assertJSON(t *testing.T, r io.Reader, std interface{}) {
+func assertJSON(t *testing.T, res string, std interface{}) {
 	t.Helper()
-
-	res, err := ioutil.ReadAll(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("json: %s", string(res))
 
 	// Strip trailing newline - encoder artefact
 	if l := len(res); l != 0 && res[l-1] == '\n' {
