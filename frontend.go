@@ -64,7 +64,7 @@ func (f *Frontend) populate(k Key, rec *record) (err error) {
 	b[29] = '"'
 	rec.eTag = string(b[:])
 
-	f.cache.setUsedMemory(recordLocation{f.id, k}, memoryUsed)
+	f.cache.setUsedMemory(rec, recordLocation{f.id, k}, memoryUsed)
 
 	return
 }

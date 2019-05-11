@@ -128,15 +128,26 @@ func (c *Cache) getRecord(frontend uint, key Key) (rec *record, fresh bool) {
 }
 
 // Set record used memory
-func (c *Cache) setUsedMemory(loc recordLocation, memoryUsed int) {
+func (c *Cache) setUsedMemory(src *record, loc recordLocation, memoryUsed int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	// It is possible for the record to evicted and possibly then a new record
+	// to inserted into the same spot while the current is populated.
+	// Need to assert the former is still in the cache.
+	//
+	// This is needed here, because the used memory value of the record directly
+	// effects the total used memory of the cache w/o recording what parts of
+	// the cache contribute what amount to the total.
+	//
+	// All other cases of such possible concurrent evictions and  override
+	// inclusions will simply NOP on their respective operations.
 	rec, ok := c.buckets[loc.frontend][loc.key]
-	if !ok {
-		return // Already evicted
+	if !ok || rec.rec != src {
+		return
 	}
 	rec.memoryUsed = memoryUsed
+	c.buckets[loc.frontend][loc.key] = rec
 	c.memoryUsed += memoryUsed
 }
 
