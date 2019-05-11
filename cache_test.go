@@ -158,7 +158,7 @@ func TestGetRecordConcurentCachesWithRecursion(t *testing.T) {
 				first = false
 			}
 
-			err = rw.Include(k, frontends[k.Cache][k.Frontend])
+			err = rw.Include(frontends[k.Cache][k.Frontend], k)
 			return
 		}
 
@@ -252,4 +252,41 @@ func TestGetRecordConcurentCachesWithRecursion(t *testing.T) {
 	}
 
 	wg.Wait()
+	assertConsistency(t, caches[:]...)
+}
+
+// Assert cache metadata is still consistent with its data
+func assertConsistency(t *testing.T, caches ...*Cache) {
+	for i, c := range caches {
+		c := c // Force heap allocation
+		t.Run(fmt.Sprintf("cache_%d", i), func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("linked list consistency", func(t *testing.T) {
+				t.Parallel()
+
+				var prev *node
+				for n, i := c.lruList.front, 0; n != nil; n, i = n.next, i+1 {
+					t.Run(fmt.Sprintf("node_%d", i), func(t *testing.T) {
+						rec, ok := c.record(n.location)
+						if !ok {
+							t.Fatal("points to missing key")
+						}
+						if rec.node != n {
+							t.Fatal("record does not point to node")
+						}
+						if i != 0 {
+							prev, _ := c.record(prev.location)
+							if prev.lastUsed.Before(rec.lastUsed) {
+								t.Fatal("list not in LRU order")
+							}
+						}
+						prev = n
+					})
+				}
+			})
+		})
+
+		// TODO: Used memory consistency
+	}
 }

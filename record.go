@@ -25,7 +25,7 @@ type recordWithMeta struct {
 	memoryUsed int
 
 	// Time of most recent use of record
-	lru time.Time
+	lastUsed time.Time
 
 	// Keep pointer to node in LRU list, so we can modify the list without
 	// itterating it to find this record's node.

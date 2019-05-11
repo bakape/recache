@@ -71,14 +71,14 @@ func (f *Frontend) populate(k Key, rec *record) (err error) {
 
 // Get a record by key and block until it has been generated
 func (f *Frontend) getGeneratedRecord(k Key) (rec *record, err error) {
-	rec, fresh := f.cache.getRecord(f.id, k)
+	rec, fresh := f.cache.getRecord(recordLocation{f.id, k})
 	if fresh {
 		err = f.populate(k, rec)
 		if err != nil {
 			// Propagate error to any concurrent readers
 			rec.populationError = err
 
-			f.cache.evict(f.id, k)
+			f.cache.evict(recordLocation{f.id, k})
 		}
 
 		// Also unblock any concurrent readers, even on error.
@@ -126,7 +126,7 @@ func (f *Frontend) WriteHTTP(k Key, w http.ResponseWriter, r *http.Request,
 
 // Evict a record by key, if any
 func (f *Frontend) Evict(k Key) {
-	f.cache.evict(f.id, k)
+	f.cache.evict(recordLocation{f.id, k})
 }
 
 // Evict all records from frontend
