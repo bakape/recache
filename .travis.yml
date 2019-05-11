@@ -1,3 +1,7 @@
 language: go
 dist: xenial
-script: GO111MODULE=on go test --race ./...
+env:
+  - GO111MODULE=on
+  - CODECOV_TOKEN="2d448476-b34b-4e7e-a7f7-5fe9b1806366"
+script:  go test --race --coverprofile=coverage.txt --covermode=atomic ./...
+after_success: bash <(curl -s https://codecov.io/bash)
