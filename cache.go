@@ -141,9 +141,9 @@ func (c *Cache) setUsedMemory(src *record, loc recordLocation, memoryUsed int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// It is possible for the record to evicted and possibly then a new record
-	// to inserted into the same spot while the current is populated.
-	// Need to assert the former is still in the cache.
+	// It is possible for the record to be evicted and possibly then a new
+	// record to be inserted into the same spot while the current record is
+	// populated. Need to assert the former is still in the cache.
 	//
 	// This is needed here, because the used memory value of the record directly
 	// effects the total used memory of the cache w/o recording what parts of
