@@ -3,12 +3,17 @@ package recache
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+)
+
+var (
+	errSample = errors.New("sample generation error")
 )
 
 func TestGetRecordConcurentCaches(t *testing.T) {
@@ -166,6 +171,10 @@ func prepareRecursion(memoryLimit uint, lruLimit time.Duration,
 	getter := func(k Key, rw *RecordWriter) (err error) {
 		data := k.(recursiveData)
 
+		if data.Key == 2 {
+			return errSample
+		}
+
 		_, err = rw.Write([]byte(`{"data":`))
 		if err != nil {
 			return
@@ -268,13 +277,19 @@ func testRecursion(t *testing.T, wg *sync.WaitGroup, caches [3]*Cache,
 										var w bytes.Buffer
 										_, err := frontends[cacheID][frontendID].
 											WriteTo(key, &w)
-										if err != nil {
-											t.Fatal(err)
+										if keyID != 2 {
+											// Normal generation
+											if err != nil {
+												t.Fatal(err)
+											}
+											assertJSON(t,
+												unzip(t, &w),
+												recursiveStandard(cacheID,
+													frontendID, keyID))
+										} else {
+											// Error passing
+											assertEquals(t, err, errSample)
 										}
-										assertJSON(t,
-											unzip(t, &w),
-											recursiveStandard(cacheID,
-												frontendID, keyID))
 									}(k)
 								}
 							}
