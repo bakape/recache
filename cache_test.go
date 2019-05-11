@@ -285,8 +285,49 @@ func assertConsistency(t *testing.T, caches ...*Cache) {
 					})
 				}
 			})
-		})
 
-		// TODO: Used memory consistency
+			t.Run("used memory consistency", func(t *testing.T) {
+				t.Parallel()
+
+				used := 0
+				for _, b := range c.buckets {
+					for _, rec := range b {
+						recUsed := 0
+						for _, c := range rec.rec.data {
+							recUsed += c.Size()
+						}
+						if recUsed != rec.memoryUsed {
+							t.Fatal("record used memory mismatch")
+						}
+						used += recUsed
+					}
+				}
+				if c.memoryUsed != used {
+					t.Fatal("cache used memory mismatch")
+				}
+				if c.memoryUsed < 0 {
+					t.Fatal("negative used memory")
+				}
+			})
+
+			t.Run("records have nodes", func(t *testing.T) {
+				t.Parallel()
+
+				for _, b := range c.buckets {
+					for _, rec := range b {
+						has := false
+						for n := c.lruList.front; n != nil; n = n.next {
+							if n == rec.node {
+								has = true
+								break
+							}
+						}
+						if !has {
+							t.Fatal("no linked node for record")
+						}
+					}
+				}
+			})
+		})
 	}
 }
