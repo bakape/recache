@@ -8,10 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
-
-// TODO: Test with concurrent caches and evictions.
-// Must assert state of caches and linked lists after it.
 
 func TestGetRecordConcurentCaches(t *testing.T) {
 	t.Parallel()
@@ -70,6 +68,48 @@ func TestGetRecordConcurentCaches(t *testing.T) {
 	wg.Wait()
 }
 
+// Tests for overall correctness and data races with complicated intra-cache and
+// inter-cache recursion
+func TestWithRecursion(t *testing.T) {
+	t.Parallel()
+
+	cases := [...]struct {
+		name        string
+		memoryLimit uint
+		lruLimit    time.Duration
+	}{
+		{
+			name: "no limits",
+		},
+		{
+			name:        "memory limit",
+			memoryLimit: 1024,
+		},
+		{
+			name:     "LRU limit",
+			lruLimit: time.Nanosecond * 10,
+		},
+		{
+			name:        "memory and LRU limit",
+			memoryLimit: 1024,
+			lruLimit:    time.Nanosecond * 10,
+		},
+	}
+
+	for i := range cases {
+		c := cases[i]
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			var wg sync.WaitGroup
+			caches, frontends := prepareRecursion(c.memoryLimit, c.lruLimit)
+			testRecursion(t, &wg, caches, frontends)
+			wg.Wait()
+			assertConsistency(t, caches[:]...)
+		})
+	}
+}
+
 type recursiveNode struct {
 	Data     recursiveData   `json:"data"`
 	Children []recursiveNode `json:"children"`
@@ -115,14 +155,9 @@ func recursiveStandard(cache, frontend, key int) (node recursiveNode) {
 	return
 }
 
-// Tests for correctness and data races with complicated intra-cache and
-// inter-cache recursion
-func TestGetRecordConcurentCachesWithRecursion(t *testing.T) {
-	t.Parallel()
-
-	var wg sync.WaitGroup
-	wg.Add(9 * 3)
-
+// Generate caches and frontends for recursion tests
+func prepareRecursion(memoryLimit uint, lruLimit time.Duration,
+) ([3]*Cache, [3][3]*Frontend) {
 	var (
 		caches    [3]*Cache
 		frontends [3][3]*Frontend
@@ -194,11 +229,19 @@ func TestGetRecordConcurentCachesWithRecursion(t *testing.T) {
 	}
 
 	for i := 0; i < 3; i++ {
-		caches[i] = NewCache(0, 0)
+		caches[i] = NewCache(memoryLimit, lruLimit)
 		for j := 0; j < 3; j++ {
 			frontends[i][j] = caches[i].NewFrontend(getter)
 		}
 	}
+
+	return caches, frontends
+}
+
+func testRecursion(t *testing.T, wg *sync.WaitGroup, caches [3]*Cache,
+	frontends [3][3]*Frontend,
+) {
+	wg.Add(9 * 3)
 
 	for cacheID := 0; cacheID < 3; cacheID++ {
 		go func(cacheID int) {
@@ -250,9 +293,6 @@ func TestGetRecordConcurentCachesWithRecursion(t *testing.T) {
 			}
 		}(cacheID)
 	}
-
-	wg.Wait()
-	assertConsistency(t, caches[:]...)
 }
 
 // Assert cache metadata is still consistent with its data
@@ -328,6 +368,9 @@ func assertConsistency(t *testing.T, caches ...*Cache) {
 					}
 				}
 			})
+
+			// The eviction of records over the LRU or memory limits in the
+			// cache is eventual and thus not tested.
 		})
 	}
 }

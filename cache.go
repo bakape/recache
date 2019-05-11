@@ -171,6 +171,7 @@ func registerInclusion(parent, child intercacheRecordLocation) {
 		return // Already evicted
 	}
 	rec.includedIn = append(rec.includedIn, parent)
+	c.buckets[child.frontend][child.key] = rec
 }
 
 // Evict record from cache
