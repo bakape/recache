@@ -47,4 +47,8 @@ evicted from the cache until the overflow is eventually mitigated.
 recache also provides methods for evicting records by key, by matcher functions
 or clearing the cache or frontend by evicting all records.
 
+recache does not perform any actions without calls to the library. This
+means that recache has zero passive runtime costs, if you exclude the cost of
+managing the memory used by recache on the Go runtime.
+
 TODO: benchmarks
