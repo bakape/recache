@@ -38,7 +38,7 @@ subsequent clients will simply consume it after a cheap atomic flag check.
 
 A single cache can contain multiple frontends. A frontend's stored data is
 subject to the same memory and LRU limits as its parent cache, however each
-frontend has it's own private key space and possibly different new record
+frontend has it's own private key space and a possibly different new record
 generation lambda.
 
 recache provides configurable per-cache instance maximum used memory and last
