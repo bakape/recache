@@ -315,8 +315,6 @@ func assertConsistency(t *testing.T, caches ...*Cache) {
 	for i, c := range caches {
 		c := c // Force heap allocation
 		t.Run(fmt.Sprintf("cache_%d", i), func(t *testing.T) {
-			t.Parallel()
-
 			t.Run("linked list consistency", func(t *testing.T) {
 				t.Parallel()
 
@@ -388,4 +386,131 @@ func assertConsistency(t *testing.T, caches ...*Cache) {
 			// cache is eventual and thus not tested.
 		})
 	}
+}
+
+func TestEviction(t *testing.T) {
+	t.Parallel()
+
+	prepareCache := func() (*Cache, [3]*Frontend) {
+		var wg sync.WaitGroup
+		caches, frontends := prepareRecursion(0, 0)
+		testRecursion(t, &wg, caches, frontends)
+		wg.Wait()
+
+		assertConsistency(t, caches[:]...)
+
+		return caches[0], frontends[0]
+	}
+
+	t.Run("cache", func(t *testing.T) {
+		t.Parallel()
+
+		c, _ := prepareCache()
+
+		c.EvictAll()
+		assertConsistency(t, c)
+
+		if c.memoryUsed != 0 {
+			t.Fatal("memory used not 0")
+		}
+		for _, b := range c.buckets {
+			if len(b) != 0 {
+				t.Fatal("bucket not empty")
+			}
+		}
+	})
+
+	t.Run("frontend", func(t *testing.T) {
+		t.Parallel()
+
+		c, frontends := prepareCache()
+		frontends[0].EvictAll()
+
+		for i, b := range c.buckets {
+			if i == 0 {
+				if len(b) != 0 {
+					t.Fatal("bucket not empty")
+				}
+			} else {
+				if len(b) == 0 {
+					t.Fatal("bucket empty")
+				}
+			}
+		}
+
+		assertConsistency(t, c)
+	})
+
+	t.Run("selective", func(t *testing.T) {
+		t.Parallel()
+
+		assertSingleEviction := func(t *testing.T, c *Cache, frontend int) {
+			for i := 0; i < 2; i++ {
+				_, ok := c.buckets[0][recursiveData{
+					Cache:    0,
+					Frontend: 0,
+					Key:      i,
+				}]
+				if i == 1 {
+					if ok {
+						t.Fatal("key not evicted")
+					}
+				} else {
+					if !ok {
+						t.Fatal("key evicted")
+					}
+				}
+			}
+		}
+
+		t.Run("by key", func(t *testing.T) {
+			t.Parallel()
+
+			c, frontends := prepareCache()
+
+			frontends[0].Evict(recursiveData{
+				Cache:    0,
+				Frontend: 0,
+				// Record 1 is not included in other records and won't cause
+				// recursive evictions
+				Key: 1,
+			})
+
+			assertSingleEviction(t, c, 0)
+			assertConsistency(t, c)
+		})
+
+		t.Run("by function", func(t *testing.T) {
+			t.Parallel()
+
+			c, frontends := prepareCache()
+
+			err := frontends[0].EvictByFunc(func(k Key) (bool, error) {
+				// Record 1 is not included in other records and won't cause
+				// recursive evictions
+				return k.(recursiveData).Key == 1, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			assertSingleEviction(t, c, 1)
+			assertConsistency(t, c)
+		})
+
+		t.Run("by function with error", func(t *testing.T) {
+			t.Parallel()
+
+			c, frontends := prepareCache()
+
+			err := frontends[0].EvictByFunc(func(k Key) (bool, error) {
+				return false, errSample
+			})
+			if err != errSample {
+				t.Fatal("error expected")
+			}
+			assertConsistency(t, c)
+		})
+	})
+
 }
