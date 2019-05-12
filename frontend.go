@@ -25,6 +25,7 @@ type Frontend struct {
 // Populates a record using the registered Getter
 func (f *Frontend) populate(k Key, rec *record) (err error) {
 	rw := RecordWriter{
+		cache:    f.cache.id,
 		frontend: f.id,
 		key:      k,
 	}

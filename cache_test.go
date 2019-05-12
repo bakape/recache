@@ -424,10 +424,10 @@ func TestEviction(t *testing.T) {
 		t.Parallel()
 
 		c, frontends := prepareCache()
-		frontends[0].EvictAll()
+		frontends[2].EvictAll()
 
 		for i, b := range c.buckets {
-			if i == 0 {
+			if i == 2 {
 				if len(b) != 0 {
 					t.Fatal("bucket not empty")
 				}
@@ -513,4 +513,41 @@ func TestEviction(t *testing.T) {
 		})
 	})
 
+	t.Run("max-memory-based", func(t *testing.T) {
+		t.Parallel()
+
+		c, frontends := prepareCache()
+		c.memoryLimit = 1
+
+		var buf bytes.Buffer
+		_, err := frontends[2].WriteTo(
+			recursiveData{
+				Key: 1,
+			},
+			&buf,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		assertConsistency(t, c)
+	})
+
+	t.Run("same cache recursion", func(t *testing.T) {
+		t.Parallel()
+
+		c, frontends := prepareCache()
+		c.memoryLimit = 1
+
+		var buf bytes.Buffer
+		_, err := frontends[2].WriteTo(
+			recursiveData{},
+			&buf,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		assertConsistency(t, c)
+	})
 }
