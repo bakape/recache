@@ -13,7 +13,7 @@ This is based on the fact that any compliant GZIP decoder decompresses a
 concatenation of individually compressed component GZIP buffers to the
 equivalent of the concatenation of the source component buffers. This allows
 recache to generate a tree of components on request that can be sequentially
-written to a consumer such as an HTTP request or buffer builder with zero extra
+written to a consumer such as a HTTP request or buffer builder with zero extra
 buffer copies or allocation.
 
 Unlike more traditional caches, that provide a more or less CRUD-like interface,
