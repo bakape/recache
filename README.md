@@ -25,7 +25,7 @@ ETags for versioning and registers any recursively looked up records from the
 same or other cache instances.
 
 On client request a component tree is generated for this specific request.
-This allows recache to pass any errors, that occurred during generation before
+This allows recache to pass any errors, that occurred during generation, before
 writing a single byte to the client, enabling simple error propagation.
 Once a component tree has been generated it is immutable and safe to be streamed
 to the client, even if a component is evicted concurrently during the streaming.
