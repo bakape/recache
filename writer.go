@@ -34,11 +34,7 @@ func (rw *RecordWriter) Write(p []byte) (n int, err error) {
 		// Reuse allocated resources, if possible
 		rw.pending.Reset()
 		if rw.gzWriter == nil {
-			rw.gzWriter, err = gzip.NewWriterLevel(&rw.pending,
-				gzip.BestCompression)
-			if err != nil {
-				return
-			}
+			rw.gzWriter = gzip.NewWriter(&rw.pending)
 		} else {
 			rw.gzWriter.Reset(&rw.pending)
 		}
