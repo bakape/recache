@@ -77,10 +77,10 @@ func (f *Frontend) populate(k Key, rec *record) (err error) {
 	}
 
 	// Known size, so using array on the stack instead of heap allocation
-	var b [30]byte
+	var b [27 + 2]byte
 	b[0] = '"'
-	base64.StdEncoding.Encode(b[1:], rec.hash[:])
-	b[29] = '"'
+	base64.RawStdEncoding.Encode(b[1:], rec.hash[:])
+	b[28] = '"'
 	rec.eTag = string(b[:])
 
 	f.cache.setUsedMemory(rec, recordLocation{f.id, k}, memoryUsed)
