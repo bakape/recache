@@ -1,7 +1,9 @@
 package recache
 
 import (
+	"compress/gzip"
 	"crypto/sha1"
+	"encoding/json"
 	"io"
 	"time"
 )
@@ -68,4 +70,57 @@ func (r *record) WriteTo(w io.Writer) (n int64, err error) {
 		n += m
 	}
 	return
+}
+
+func (r *record) NewReader() io.Reader {
+	return &recordReader{
+		record: r,
+	}
+}
+
+// Adapter for reading data from record w/o mutating it
+type recordReader struct {
+	off     int
+	current io.Reader
+	*record
+}
+
+func (r *recordReader) Read(p []byte) (n int, err error) {
+	if len(p) == 0 {
+		return
+	}
+	if r.off >= len(r.data) {
+		return 0, io.EOF
+	}
+	if r.current == nil {
+		r.current = r.data[r.off].NewReader()
+	}
+
+	n, err = r.current.Read(p)
+	if err != nil {
+		if err == io.EOF {
+			// Fully consumed current reader
+			err = nil
+			r.current = nil
+			r.off++
+		}
+	}
+	return
+}
+
+// Adapter, that enables decoding the record as JSON
+type recordDecoder struct {
+	*record
+}
+
+func (r recordDecoder) DecodeJSON(dst interface{}) (err error) {
+	gzr, err := gzip.NewReader(r.NewReader())
+	if err != nil {
+		return
+	}
+	err = json.NewDecoder(gzr).Decode(dst)
+	if err != nil {
+		return
+	}
+	return gzr.Close()
 }

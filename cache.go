@@ -45,6 +45,8 @@ type Cache struct {
 // eventual and not immediate for optimisation purposes.
 //
 // Pass in zero values to ignore either or both eviction limits.
+//
+// TODO: GC timer & take options struct as argument
 func NewCache(memoryLimit uint, lruLimit time.Duration) (c *Cache) {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()

@@ -1,7 +1,6 @@
 package recache
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -43,13 +42,11 @@ func TestGetRecordConcurentCaches(t *testing.T) {
 									go func(k int) {
 										defer keyWg.Done()
 
-										var w bytes.Buffer
-										_, err := f.WriteTo(key, &w)
+										s, err := f.Get(key)
 										if err != nil {
 											t.Fatal(err)
 										}
-										assertEquals(t, unzip(t, &w),
-											fmt.Sprintf(`"%s"`, key))
+										assertJsonStringEquals(t, s, key)
 									}(k)
 								}
 							}
@@ -274,18 +271,24 @@ func testRecursion(t *testing.T, wg *sync.WaitGroup, caches [3]*Cache,
 									go func(k int) {
 										defer keyWg.Done()
 
-										var w bytes.Buffer
-										_, err := frontends[cacheID][frontendID].
-											WriteTo(key, &w)
+										s, err := frontends[cacheID][frontendID].
+											Get(key)
 										if keyID != 2 {
 											// Normal generation
 											if err != nil {
 												t.Fatal(err)
 											}
-											assertJSON(t,
-												unzip(t, &w),
-												recursiveStandard(cacheID,
-													frontendID, keyID))
+											std := recursiveStandard(
+												cacheID,
+												frontendID,
+												keyID,
+											)
+											var res recursiveNode
+											err = s.DecodeJSON(&res)
+											if err != nil {
+												t.Fatal(err)
+											}
+											assertEquals(t, res, std)
 										} else {
 											// Error passing
 											assertEquals(t, err, errSample)
@@ -519,13 +522,9 @@ func TestEviction(t *testing.T) {
 		c, frontends := prepareCache()
 		c.memoryLimit = 1
 
-		var buf bytes.Buffer
-		_, err := frontends[2].WriteTo(
-			recursiveData{
-				Key: 1,
-			},
-			&buf,
-		)
+		_, err := frontends[2].Get(recursiveData{
+			Key: 1,
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -539,11 +538,7 @@ func TestEviction(t *testing.T) {
 		c, frontends := prepareCache()
 		c.memoryLimit = 1
 
-		var buf bytes.Buffer
-		_, err := frontends[2].WriteTo(
-			recursiveData{},
-			&buf,
-		)
+		_, err := frontends[2].Get(recursiveData{})
 		if err != nil {
 			t.Fatal(err)
 		}

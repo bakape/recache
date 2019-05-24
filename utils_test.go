@@ -1,32 +1,9 @@
 package recache
 
 import (
-	"compress/gzip"
-	"encoding/json"
-	"io"
-	"io/ioutil"
 	"reflect"
 	"testing"
-
-	"github.com/onsi/gomega"
 )
-
-// assertJSON equality to unencoded data
-func assertJSON(t *testing.T, res string, std interface{}) {
-	t.Helper()
-
-	// Strip trailing newline - encoder artefact
-	if l := len(res); l != 0 && res[l-1] == '\n' {
-		res = res[:l-1]
-	}
-
-	stdJSON, err := json.Marshal(std)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	gomega.NewGomegaWithT(t).Expect(res).To(gomega.MatchJSON(stdJSON))
-}
 
 // logUnexpected fails the test and prints the values in an
 // `expected: X got: Y` format
@@ -44,26 +21,20 @@ func assertEquals(t *testing.T, res, std interface{}) {
 	}
 }
 
-func unzip(t *testing.T, src io.Reader) string {
+func decodeJSON(t *testing.T, src Streamer, dst interface{}) {
 	t.Helper()
 
-	r, err := gzip.NewReader(src)
+	err := src.DecodeJSON(&dst)
 	if err != nil {
 		t.Fatal(err)
 	}
-	buf, err := ioutil.ReadAll(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = r.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+}
 
-	// Remove training newline
-	if l := len(buf); l != 0 && buf[l-1] == '\n' {
-		buf = buf[:l-1]
-	}
+func assertJsonStringEquals(t *testing.T, src Streamer, std string) {
+	t.Helper()
 
-	return string(buf)
+	var res string
+	decodeJSON(t, src, &res)
+	assertEquals(t, res, std)
+
 }

@@ -8,6 +8,7 @@ import (
 // Contains either a buffer or a reference to another record
 type component interface {
 	io.WriterTo
+	NewReader() io.Reader
 	Size() int
 	Hash() [sha1.Size]byte
 }
@@ -32,18 +33,38 @@ func (b buffer) WriteTo(w io.Writer) (int64, error) {
 	return int64(n), err
 }
 
+func (b buffer) NewReader() io.Reader {
+	return &bufferReader{
+		buffer: b,
+	}
+}
+
 func (b buffer) Size() int {
 	return len(b.data)
+}
+
+// Adapter for reading data from component w/o mutating it
+type bufferReader struct {
+	off int
+	buffer
+}
+
+func (r *bufferReader) Read(p []byte) (n int, err error) {
+	if len(p) == 0 {
+		return
+	}
+	if r.off >= len(r.data) {
+		return 0, io.EOF
+	}
+	n = copy(p, r.data[r.off:])
+	r.off += n
+	return
 }
 
 // Reference to another record
 type recordReference struct {
 	componentCommon
-	ref io.WriterTo
-}
-
-func (r recordReference) WriteTo(w io.Writer) (int64, error) {
-	return r.ref.WriteTo(w)
+	*record
 }
 
 func (r recordReference) Size() int {

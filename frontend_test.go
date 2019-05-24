@@ -1,9 +1,7 @@
 package recache
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http/httptest"
 	"strconv"
 	"sync"
@@ -26,12 +24,11 @@ func TestGetRecord(t *testing.T) {
 	const key = "key1"
 
 	run := func() {
-		var w bytes.Buffer
-		_, err := f.WriteTo(key, &w)
+		s, err := f.Get(key)
 		if err != nil {
 			t.Fatal(err)
 		}
-		assertEquals(t, unzip(t, &w), fmt.Sprintf(`"%s"`, key))
+		assertJsonStringEquals(t, s, key)
 	}
 
 	// Initial population
@@ -59,12 +56,11 @@ func TestGetRecordConcurrentFetches(t *testing.T) {
 			go func(k int) {
 				defer wg.Done()
 
-				var w bytes.Buffer
-				_, err := f.WriteTo(key, &w)
+				s, err := f.Get(key)
 				if err != nil {
 					t.Fatal(err)
 				}
-				assertEquals(t, unzip(t, &w), fmt.Sprintf(`"%s"`, key))
+				assertJsonStringEquals(t, s, key)
 			}(k)
 		}
 	}
@@ -104,13 +100,11 @@ func TestGetRecordConcurentFrontends(t *testing.T) {
 							go func(k int) {
 								defer keyWg.Done()
 
-								var w bytes.Buffer
-								_, err := f.WriteTo(key, &w)
+								s, err := f.Get(key)
 								if err != nil {
 									t.Fatal(err)
 								}
-								assertEquals(t, unzip(t, &w),
-									fmt.Sprintf(`"%s"`, key))
+								assertJsonStringEquals(t, s, key)
 							}(k)
 						}
 					}

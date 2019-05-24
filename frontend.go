@@ -15,6 +15,24 @@ type Key interface{}
 // Getter must be thread-safe.
 type Getter func(Key, *RecordWriter) error
 
+// Readable stream with support for io.WriterTo and conversion to
+// io.Reader interfaces
+type Streamer interface {
+	// Can be called safely from multiple goroutines
+	io.WriterTo
+
+	// Create a new io.Reader for this stream.
+	// Multiple instances of such an io.Reader can exist and be read
+	// concurrently.
+	NewReader() io.Reader
+
+	// Convenience method for efficiently decoding stream contents as JSON into
+	// the destination variable.
+	//
+	// dst: pointer to destination variable
+	DecodeJSON(dst interface{}) error
+}
+
 // A frontend for accessing the cache contents
 type Frontend struct {
 	id     uint
@@ -96,13 +114,14 @@ func (f *Frontend) getGeneratedRecord(k Key) (rec *record, err error) {
 	return
 }
 
-// Retrieve or generate data by key and write it to w
-func (f *Frontend) WriteTo(k Key, w io.Writer) (n int64, err error) {
+// Retrieve or generate data by key and return a consumable result Stream
+func (f *Frontend) Get(k Key) (s Streamer, err error) {
 	rec, err := f.getGeneratedRecord(k)
 	if err != nil {
 		return
 	}
-	return rec.WriteTo(w)
+	s = recordDecoder{rec}
+	return
 }
 
 // Retrieve or generate data by key and write it to w.

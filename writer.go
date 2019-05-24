@@ -87,7 +87,7 @@ func (rw *RecordWriter) Include(f *Frontend, k Key) (err error) {
 		componentCommon: componentCommon{
 			hash: rec.hash,
 		},
-		ref: rec,
+		record: rec,
 	})
 	registerInclusion(
 		intercacheRecordLocation{
