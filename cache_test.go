@@ -23,7 +23,7 @@ func TestGetRecordConcurentCaches(t *testing.T) {
 
 	for j := 0; j < 3; j++ {
 		go func() {
-			var cache = NewCache(0, 0)
+			var cache = NewCache(Options{})
 
 			for i := 0; i < 3; i++ {
 				go func() {
@@ -235,7 +235,10 @@ func prepareRecursion(memoryLimit uint, lruLimit time.Duration,
 	}
 
 	for i := 0; i < 3; i++ {
-		caches[i] = NewCache(memoryLimit, lruLimit)
+		caches[i] = NewCache(Options{
+			MemoryLimit: memoryLimit,
+			LRULimit:    lruLimit,
+		})
 		for j := 0; j < 3; j++ {
 			frontends[i][j] = caches[i].NewFrontend(getter)
 		}

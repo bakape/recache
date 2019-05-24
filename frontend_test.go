@@ -17,7 +17,7 @@ func TestGetRecord(t *testing.T) {
 	t.Parallel()
 
 	var (
-		cache = NewCache(0, 0)
+		cache = NewCache(Options{})
 		f     = cache.NewFrontend(dummyGetter)
 	)
 
@@ -42,7 +42,7 @@ func TestGetRecordConcurrentFetches(t *testing.T) {
 	t.Parallel()
 
 	var (
-		cache = NewCache(0, 0)
+		cache = NewCache(Options{})
 		f     = cache.NewFrontend(dummyGetter)
 		wg    sync.WaitGroup
 	)
@@ -78,7 +78,7 @@ func TestGetRecordConcurentFrontends(t *testing.T) {
 	t.Parallel()
 
 	var (
-		cache = NewCache(0, 0)
+		cache = NewCache(Options{})
 		wg    sync.WaitGroup
 	)
 	wg.Add(9)
@@ -130,7 +130,7 @@ func TestWriteHTTP(t *testing.T) {
 
 	var etag string
 
-	cache := NewCache(0, 0)
+	cache := NewCache(Options{})
 	f := cache.NewFrontend(dummyGetter)
 
 	cases := [...]struct {

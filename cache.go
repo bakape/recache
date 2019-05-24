@@ -39,22 +39,29 @@ type Cache struct {
 	buckets           map[uint]map[Key]recordWithMeta
 }
 
+// Options for new cache creation
+type Options struct {
+	// Maximum amount of memory the cache can consume without forcing eviction
+	MemoryLimit uint
+
+	// Maximum last use time of record without forcing eviction
+	LRULimit time.Duration
+}
+
 // Create new cache with specified memory and LRU eviction limits. After either
 // of these are exceeded, the least recently used cache records will be evicted,
 // until the requirements are satisfied again. Note that this eviction is
 // eventual and not immediate for optimisation purposes.
 //
 // Pass in zero values to ignore either or both eviction limits.
-//
-// TODO: GC timer & take options struct as argument
-func NewCache(memoryLimit uint, lruLimit time.Duration) (c *Cache) {
+func NewCache(opts Options) (c *Cache) {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
 
 	c = &Cache{
 		id:          cacheIDCounter,
-		memoryLimit: int(memoryLimit),
-		lruLimit:    lruLimit,
+		memoryLimit: int(opts.MemoryLimit),
+		lruLimit:    opts.LRULimit,
 		buckets:     make(map[uint]map[Key]recordWithMeta),
 	}
 	caches[cacheIDCounter] = c
