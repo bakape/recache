@@ -3,7 +3,7 @@
 [![codecov](https://codecov.io/gh/bakape/recache/branch/master/graph/badge.svg)](https://codecov.io/gh/bakape/recache)
 
 # recache
-recursive compressed cache library and server
+recursive compressed caching proxy library and server
 
 recache is a library (standalone server implementation pending) that enables you
 to easily construct caches with reusable components stored efficiently in
