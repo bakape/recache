@@ -36,5 +36,4 @@ func assertJsonStringEquals(t *testing.T, src Streamer, std string) {
 	var res string
 	decodeJSON(t, src, &res)
 	assertEquals(t, res, std)
-
 }
