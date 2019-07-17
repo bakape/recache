@@ -16,12 +16,17 @@ recache to generate a tree of components on request that can be sequentially
 written to a consumer such as a HTTP request or buffer builder with zero extra
 buffer copies or allocation.
 
+The recursive aspect of recache denotes the ability of each cache entry to
+contain references to other entries in the same or a different cache. This
+allows to easily save on cache entry storage space and propagate eviction of
+dependant cache entries on parent entry eviction.
+
 Unlike more traditional caches, that provide a more or less CRUD-like interface,
 recache abstracts cache hits and misses from the client. The client instead
-provides a lookup key and lambda to generate a new cache record.
-In case of cache miss (of the targeted record or any included record references)
+provides a lookup key and lambda to generate a new cache entry.
+In case of cache miss (of the targeted entry or any included entry references)
 recache calls the provided lambda, compresses the result, generates hashes and
-ETags for versioning and registers any recursively looked up records from the
+ETags for versioning and registers any recursively looked up entries from the
 same or other cache instances.
 
 On client request a component tree is generated for this specific request.
@@ -31,21 +36,21 @@ Once a component tree has been generated it is immutable and safe to be streamed
 to the client, even if a component is evicted concurrently during the streaming.
 
 recache guarantees work deduplication with concurrent requests requesting a
-missing record. In such a case the first client will proceed to generate the
-cache record data and any subsequent clients will block until this generation
-has completed. Once generation is completed, the record is immutable and any
+missing entry. In such a case the first client will proceed to generate the
+cache entry data and any subsequent clients will block until this generation
+has completed. Once generation is completed, the entry is immutable and any
 subsequent clients will simply consume it after a cheap atomic flag check.
 
 A single cache can contain multiple frontends. A frontend's stored data is
 subject to the same memory and LRU limits as its parent cache, however each
-frontend has it's own private key space and a possibly different new record
+frontend has it's own private key space and a possibly different new entry
 generation lambda.
 
 recache provides configurable per-cache instance maximum used memory and last
-record use time limits. In case of overflow the least recently used records are
+entry use time limits. In case of overflow the least recently used entries are
 evicted from the cache until the overflow is eventually mitigated.
-recache also provides methods for evicting records by key, by matcher functions
-or clearing the cache or frontend by evicting all records.
+recache also provides methods for evicting entries by key, by matcher functions
+or clearing the cache or frontend by evicting all entries.
 
 recache does not perform any actions without calls to the library. This
 means that recache has zero passive runtime costs, if you exclude the cost of
