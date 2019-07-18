@@ -6,19 +6,14 @@ import (
 	"testing"
 )
 
-func TestBind(t *testing.T) {
+func TestBindJSON(t *testing.T) {
 	cache := NewCache(Options{})
 	var f *Frontend
 	f = cache.NewFrontend(func(k Key, rw *RecordWriter) (err error) {
 		switch k.(int) {
 		case 0:
-			var s Streamer
-			s, err = rw.Bind(f, 1)
-			if err != nil {
-				return
-			}
 			var data string
-			err = s.DecodeJSON(&data)
+			err = rw.BindJSON(f, 1, &data)
 			if err != nil {
 				return
 			}
