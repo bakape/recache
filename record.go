@@ -97,13 +97,11 @@ func (r *recordReader) Read(p []byte) (n int, err error) {
 	}
 
 	n, err = r.current.Read(p)
-	if err != nil {
-		if err == io.EOF {
-			// Fully consumed current reader
-			err = nil
-			r.current = nil
-			r.off++
-		}
+	if err == io.EOF {
+		// Fully consumed current reader
+		err = nil
+		r.current = nil
+		r.off++
 	}
 	return
 }

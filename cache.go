@@ -158,7 +158,7 @@ func (c *Cache) setUsedMemory(src *record, loc recordLocation, memoryUsed int) {
 	// effects the total used memory of the cache w/o recording what parts of
 	// the cache contribute what amount to the total.
 	//
-	// All other cases of such possible concurrent evictions and  override
+	// All other cases of such possible concurrent evictions and overriden
 	// inclusions will simply NOP on their respective operations.
 	rec, ok := c.record(loc)
 	if !ok || rec.rec != src {
