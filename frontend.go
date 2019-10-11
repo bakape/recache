@@ -31,6 +31,12 @@ type Streamer interface {
 	//
 	// dst: pointer to destination variable
 	DecodeJSON(dst interface{}) error
+
+	// Create a new io.ReadCloser for the unzipped content of this stream.
+	//
+	// It is the caller's responsibility to call Close on the io.ReadCloser
+	// when finished reading.
+	Unzip() io.ReadCloser
 }
 
 // A frontend for accessing the cache contents

@@ -112,13 +112,26 @@ type recordDecoder struct {
 }
 
 func (r recordDecoder) DecodeJSON(dst interface{}) (err error) {
-	gzr, err := gzip.NewReader(r.NewReader())
-	if err != nil {
-		return
+	uz := r.Unzip()
+	defer uz.Close()
+	return json.NewDecoder(uz).Decode(dst)
+}
+
+func (r recordDecoder) Unzip() io.ReadCloser {
+	var u recordUnzipper
+	u.Reader, u.error = gzip.NewReader(r.NewReader())
+	return u
+}
+
+// Adapter for smoother error handling
+type recordUnzipper struct {
+	*gzip.Reader
+	error
+}
+
+func (r recordUnzipper) Read(p []byte) (n int, err error) {
+	if r.error != nil {
+		return 0, r.error
 	}
-	err = json.NewDecoder(gzr).Decode(dst)
-	if err != nil {
-		return
-	}
-	return gzr.Close()
+	return r.Reader.Read(p)
 }
