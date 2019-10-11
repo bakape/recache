@@ -351,7 +351,7 @@ func assertConsistency(t *testing.T, caches ...*Cache) {
 				for _, b := range c.buckets {
 					for _, rec := range b {
 						recUsed := 0
-						for _, c := range rec.rec.data {
+						for c := &rec.rec.data; c != nil; c = c.next {
 							recUsed += c.Size()
 						}
 						if recUsed != rec.memoryUsed {

@@ -3,8 +3,15 @@ package recache
 import (
 	"crypto/sha1"
 	"encoding/base64"
+	"errors"
 	"io"
 	"net/http"
+)
+
+var (
+	// Indicates no components have been written and no error has been returned
+	// in a call to Getter. This is not allowed.
+	ErrEmptyRecord = errors.New("empty record created")
 )
 
 // Value used to store entries in the cache. Must be a type suitable for being a
@@ -64,19 +71,25 @@ func (f *Frontend) populate(k Key, rec *record) (err error) {
 		return
 	}
 
+	// Much of our code assumes there is at least oner component in a record.
+	// 0 component records don't have any use anyway.
+	if rw.data.component == nil {
+		return ErrEmptyRecord
+	}
+
 	rec.data = rw.data
 	memoryUsed := 0
-	if len(rec.data) == 1 {
-		d := rec.data[0]
-		memoryUsed = d.Size()
-		rec.hash = d.Hash()
+	if rec.data.next == nil {
+		// Most records will have only one component, so this is a hotpath
+		memoryUsed = rec.data.Size()
+		rec.hash = rec.data.Hash()
 	} else {
 		h := sha1.New()
-		for _, d := range rec.data {
-			memoryUsed += d.Size()
+		for c := &rec.data; c != nil; c = c.next {
+			memoryUsed += c.Size()
 
 			// Hash the child hash to better propagate changes
-			arr := d.Hash()
+			arr := c.Hash()
 			h.Write(arr[:])
 		}
 		copy(rec.hash[:], h.Sum(nil))

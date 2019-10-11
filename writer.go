@@ -22,9 +22,12 @@ type RecordWriter struct {
 	compressing     bool // Currently compressing data into a buffer
 	cache, frontend uint
 	key             Key
-	gzWriter        *gzip.Writer
-	pending         bytes.Buffer
-	data            []component
+
+	gzWriter *gzip.Writer
+	pending  bytes.Buffer
+
+	data componentNode
+	last *componentNode
 }
 
 // Write non-gzipped data to the record for storage
@@ -84,7 +87,7 @@ func (rw *RecordWriter) Include(f *Frontend, k Key) (err error) {
 		return
 	}
 
-	rw.data = append(rw.data, recordReference{
+	rw.append(recordReference{
 		componentCommon: componentCommon{
 			hash: rec.hash,
 		},
@@ -165,8 +168,25 @@ func (rw *RecordWriter) flushPending(final bool) (err error) {
 		}
 		buf.hash = sha1.Sum(buf.data)
 
-		rw.data = append(rw.data, buf)
+		rw.append(buf)
 		rw.compressing = false
 	}
 	return
+}
+
+// Append new component to linked list
+func (rw *RecordWriter) append(c component) {
+	if rw.last == nil {
+		// First component
+		rw.data = componentNode{
+			component: c,
+		}
+		rw.last = &rw.data
+	} else {
+		n := &componentNode{
+			component: c,
+		}
+		rw.last.next = n
+		rw.last = n
+	}
 }

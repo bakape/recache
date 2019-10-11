@@ -49,7 +49,7 @@ type record struct {
 	semaphore semaphore
 
 	// Contained data and its SHA1 hash
-	data []component
+	data componentNode
 	hash [sha1.Size]byte
 	eTag string // generated from hash
 
@@ -60,9 +60,15 @@ type record struct {
 	populationError error
 }
 
+// Linked list node for storing components. This is optimal, as most of the time
+// a record will only have one component.
+type componentNode struct {
+	component
+	next *componentNode
+}
+
 func (r *record) WriteTo(w io.Writer) (n int64, err error) {
-	var m int64
-	for _, c := range r.data {
+	for c, m := &r.data, int64(0); c != nil; c = c.next {
 		m, err = c.WriteTo(w)
 		if err != nil {
 			return
@@ -74,14 +80,16 @@ func (r *record) WriteTo(w io.Writer) (n int64, err error) {
 
 func (r *record) NewReader() io.Reader {
 	return &recordReader{
-		record: r,
+		next:    r.data.next,
+		current: r.data.NewReader(),
+		record:  r,
 	}
 }
 
 // Adapter for reading data from record w/o mutating it
 type recordReader struct {
-	off     int
 	current io.Reader
+	next    *componentNode
 	*record
 }
 
@@ -89,11 +97,13 @@ func (r *recordReader) Read(p []byte) (n int, err error) {
 	if len(p) == 0 {
 		return
 	}
-	if r.off >= len(r.data) {
-		return 0, io.EOF
-	}
+
 	if r.current == nil {
-		r.current = r.data[r.off].NewReader()
+		if r.next == nil {
+			return 0, io.EOF
+		}
+		r.current = r.next.NewReader()
+		r.next = r.next.next
 	}
 
 	n, err = r.current.Read(p)
@@ -101,7 +111,6 @@ func (r *recordReader) Read(p []byte) (n int, err error) {
 		// Fully consumed current reader
 		err = nil
 		r.current = nil
-		r.off++
 	}
 	return
 }
