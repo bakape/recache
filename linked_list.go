@@ -8,7 +8,7 @@ type linkedList struct {
 type node struct {
 	next, previous *node
 
-	// Storing the location ofd the node instead of an actual *record to reduce
+	// Storing the location of the node instead of an actual *record to reduce
 	// load on the GC and the amount of information needed to be stored on the
 	// record itself.
 	location recordLocation
