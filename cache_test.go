@@ -299,8 +299,7 @@ func testRecursion(t *testing.T, wg *sync.WaitGroup, caches [3]*Cache,
 									}(k)
 								}
 							}
-							// Initial population and 2 caches reads
-							// concurrently
+							// Initial population and 2 cache reads concurrently
 							run()
 
 							// 3 reads after the data has been populated and

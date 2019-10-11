@@ -65,10 +65,10 @@ func TestGetRecordConcurrentFetches(t *testing.T) {
 		}
 	}
 
-	// Initial population and 2 caches reads concurrently
+	// Initial population and 2 cache reads concurrently
 	run()
 
-	// 3 reads after the data has been populated and madeimmutable
+	// 3 reads after the data has been populated and made immutable
 	run()
 
 	wg.Wait()
@@ -109,7 +109,7 @@ func TestGetRecordConcurentFrontends(t *testing.T) {
 						}
 					}
 
-					// Initial population and 2 caches reads concurrently
+					// Initial population and 2 cache reads concurrently
 					run()
 
 					// 3 reads after the data has been populated and made
