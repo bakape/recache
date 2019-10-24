@@ -1,7 +1,9 @@
 package recache
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"strconv"
 	"sync"
@@ -160,6 +162,22 @@ func TestWriteHTTP(t *testing.T) {
 				if etag == "" {
 					t.Fatal("no etag set")
 				}
+
+				s, err := f.Get(1)
+				if err != nil {
+					t.Fatal(err)
+				}
+				assertEquals(t, s.ETag(), etag)
+
+				h := s.SHA1()
+				assertEquals(
+					t,
+					etag,
+					fmt.Sprintf(
+						`"%s"`,
+						base64.RawStdEncoding.EncodeToString(h[:]),
+					),
+				)
 			case 1:
 				assertEquals(t, rec.Header().Get("ETag"), etag)
 			case 2:

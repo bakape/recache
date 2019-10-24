@@ -44,6 +44,12 @@ type Streamer interface {
 	// It is the caller's responsibility to call Close on the io.ReadCloser
 	// when finished reading.
 	Unzip() io.ReadCloser
+
+	// Return SHA1 hash of the content
+	SHA1() [sha1.Size]byte
+
+	// Return strong etag of content
+	ETag() string
 }
 
 // A frontend for accessing the cache contents

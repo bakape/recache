@@ -132,6 +132,14 @@ func (r recordDecoder) Unzip() io.ReadCloser {
 	return u
 }
 
+func (r recordDecoder) SHA1() [sha1.Size]byte {
+	return r.record.hash
+}
+
+func (r recordDecoder) ETag() string {
+	return r.eTag
+}
+
 // Adapter for smoother error handling
 type recordUnzipper struct {
 	*gzip.Reader
