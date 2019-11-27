@@ -85,6 +85,9 @@ type FrontendOptions struct {
 // Create new Frontend for accessing the cache.
 // A Frontend must only be created using this method.
 func (c *Cache) NewFrontend(opts FrontendOptions) *Frontend {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	f := &Frontend{
 		id:     c.frontendIDCounter,
 		cache:  c,
@@ -95,9 +98,6 @@ func (c *Cache) NewFrontend(opts FrontendOptions) *Frontend {
 	} else {
 		f.level = gzip.DefaultCompression
 	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	c.buckets[c.frontendIDCounter] = make(map[Key]recordWithMeta)
 	c.frontendIDCounter++
