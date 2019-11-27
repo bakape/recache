@@ -11,16 +11,18 @@ import (
 )
 
 // Simply writes the key to the record
-func dummyGetter(k Key, rw *RecordWriter) error {
-	return json.NewEncoder(rw).Encode(k)
+var dummyFrontOpts = FrontendOptions{
+	Get: func(k Key, rw *RecordWriter) error {
+		return json.NewEncoder(rw).Encode(k)
+	},
 }
 
 func TestGetRecord(t *testing.T) {
 	t.Parallel()
 
 	var (
-		cache = NewCache(Options{})
-		f     = cache.NewFrontend(dummyGetter)
+		cache = NewCache(CacheOptions{})
+		f     = cache.NewFrontend(dummyFrontOpts)
 	)
 
 	const key = "key1"
@@ -44,8 +46,8 @@ func TestGetRecordConcurrentFetches(t *testing.T) {
 	t.Parallel()
 
 	var (
-		cache = NewCache(Options{})
-		f     = cache.NewFrontend(dummyGetter)
+		cache = NewCache(CacheOptions{})
+		f     = cache.NewFrontend(dummyFrontOpts)
 		wg    sync.WaitGroup
 	)
 	wg.Add(6)
@@ -80,14 +82,14 @@ func TestGetRecordConcurentFrontends(t *testing.T) {
 	t.Parallel()
 
 	var (
-		cache = NewCache(Options{})
+		cache = NewCache(CacheOptions{})
 		wg    sync.WaitGroup
 	)
 	wg.Add(9)
 
 	for i := 0; i < 3; i++ {
 		go func() {
-			f := cache.NewFrontend(dummyGetter)
+			f := cache.NewFrontend(dummyFrontOpts)
 			for j := 0; j < 3; j++ {
 				go func(j int) {
 					key := "key" + strconv.Itoa(j)
@@ -132,8 +134,8 @@ func TestWriteHTTP(t *testing.T) {
 
 	var etag string
 
-	cache := NewCache(Options{})
-	f := cache.NewFrontend(dummyGetter)
+	cache := NewCache(CacheOptions{})
+	f := cache.NewFrontend(dummyFrontOpts)
 
 	cases := [...]struct {
 		name string

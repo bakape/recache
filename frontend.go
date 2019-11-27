@@ -55,6 +55,7 @@ type Streamer interface {
 // A frontend for accessing the cache contents
 type Frontend struct {
 	id     uint
+	level  int
 	cache  *Cache
 	getter Getter
 }

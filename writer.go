@@ -21,6 +21,7 @@ var (
 type RecordWriter struct {
 	compressing     bool // Currently compressing data into a buffer
 	cache, frontend uint
+	level           int
 	key             Key
 
 	gzWriter *gzip.Writer
@@ -37,7 +38,10 @@ func (rw *RecordWriter) Write(p []byte) (n int, err error) {
 		// Reuse allocated resources, if possible
 		rw.pending.Reset()
 		if rw.gzWriter == nil {
-			rw.gzWriter = gzip.NewWriter(&rw.pending)
+			rw.gzWriter, err = gzip.NewWriterLevel(&rw.pending, rw.level)
+			if err != nil {
+				return
+			}
 		} else {
 			rw.gzWriter.Reset(&rw.pending)
 		}

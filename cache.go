@@ -1,6 +1,7 @@
 package recache
 
 import (
+	"compress/gzip"
 	"sync"
 	"time"
 )
@@ -40,7 +41,7 @@ type Cache struct {
 }
 
 // Options for new cache creation
-type Options struct {
+type CacheOptions struct {
 	// Maximum amount of memory the cache can consume without forcing eviction
 	MemoryLimit uint
 
@@ -54,7 +55,7 @@ type Options struct {
 // eventual and not immediate for optimisation purposes.
 //
 // Pass in zero values to ignore either or both eviction limits.
-func NewCache(opts Options) (c *Cache) {
+func NewCache(opts CacheOptions) (c *Cache) {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
 
@@ -69,21 +70,35 @@ func NewCache(opts Options) (c *Cache) {
 	return c
 }
 
+// Options for creating a new cache frontend
+type FrontendOptions struct {
+	// Will be used for generating fresh cache records for the given key by
+	// the cache engine. These records will be stored by the cache engine and
+	// must not be modified after Get() returns. Get() must be thread-safe.
+	Get Getter
+
+	// Level level to use for storing records.
+	// Defaults to gzip.DefaultCompression.
+	Level *int
+}
+
 // Create new Frontend for accessing the cache.
 // A Frontend must only be created using this method.
-//
-// get() will be used for generating fresh cache records for the given key by
-// the cache engine. These records will be stored by the cache engine and must
-// not be modified after get() returns. get() must be thread-safe.
-func (c *Cache) NewFrontend(get Getter) *Frontend {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
+func (c *Cache) NewFrontend(opts FrontendOptions) *Frontend {
 	f := &Frontend{
 		id:     c.frontendIDCounter,
 		cache:  c,
-		getter: get,
+		getter: opts.Get,
 	}
+	if opts.Level != nil {
+		f.level = *opts.Level
+	} else {
+		f.level = gzip.DefaultCompression
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	c.buckets[c.frontendIDCounter] = make(map[Key]recordWithMeta)
 	c.frontendIDCounter++
 	return f

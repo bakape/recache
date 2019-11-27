@@ -1,6 +1,7 @@
 package recache
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,11 +24,11 @@ func TestGetRecordConcurentCaches(t *testing.T) {
 
 	for j := 0; j < 3; j++ {
 		go func() {
-			var cache = NewCache(Options{})
+			var cache = NewCache(CacheOptions{})
 
 			for i := 0; i < 3; i++ {
 				go func() {
-					f := cache.NewFrontend(dummyGetter)
+					f := cache.NewFrontend(dummyFrontOpts)
 					for j := 0; j < 3; j++ {
 						go func(j int) {
 							key := "key" + strconv.Itoa(j)
@@ -235,12 +236,16 @@ func prepareRecursion(memoryLimit uint, lruLimit time.Duration,
 	}
 
 	for i := 0; i < 3; i++ {
-		caches[i] = NewCache(Options{
+		caches[i] = NewCache(CacheOptions{
 			MemoryLimit: memoryLimit,
 			LRULimit:    lruLimit,
 		})
+		l := gzip.BestCompression
 		for j := 0; j < 3; j++ {
-			frontends[i][j] = caches[i].NewFrontend(getter)
+			frontends[i][j] = caches[i].NewFrontend(FrontendOptions{
+				Get:   getter,
+				Level: &l,
+			})
 		}
 	}
 
