@@ -77,7 +77,7 @@ type FrontendOptions struct {
 	// must not be modified after Get() returns. Get() must be thread-safe.
 	Get Getter
 
-	// Level level to use for storing records.
+	// Level of compression to use for storing records.
 	// Defaults to gzip.DefaultCompression.
 	Level *int
 }
