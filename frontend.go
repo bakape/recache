@@ -65,6 +65,7 @@ func (f *Frontend) populate(k Key, rec *record) (err error) {
 		cache:    f.cache.id,
 		frontend: f.id,
 		key:      k,
+		level:    f.level,
 	}
 	err = f.getter(k, &rw)
 	if err != nil {
@@ -127,7 +128,7 @@ func (f *Frontend) getGeneratedRecord(k Key) (rec *record, err error) {
 		}
 
 		// Also unblock any concurrent readers, even on error.
-		// Having it here also protects from data race on rec.populationError.
+		// Having it here also protects from data races on rec.populationError.
 		rec.semaphore.Unblock()
 	}
 
