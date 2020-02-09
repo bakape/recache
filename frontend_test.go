@@ -87,43 +87,43 @@ func TestGetRecordConcurentFrontends(t *testing.T) {
 	)
 	wg.Add(9)
 
-	for i := 0; i < 3; i++ {
-		go func() {
-			f := cache.NewFrontend(dummyFrontOpts)
-			for j := 0; j < 3; j++ {
-				go func(j int) {
-					key := "key" + strconv.Itoa(j)
+	test := func(t *testing.T, f *Frontend, j int) {
+		key := "key" + strconv.Itoa(j)
 
-					defer wg.Done()
-					var keyWg sync.WaitGroup
-					keyWg.Add(6)
+		defer wg.Done()
+		var keyWg sync.WaitGroup
+		keyWg.Add(6)
 
-					run := func() {
-						// Concurrent key fetches
-						for k := 0; k < 3; k++ {
-							go func(k int) {
-								defer keyWg.Done()
+		run := func() {
+			// Concurrent key fetches
+			for k := 0; k < 3; k++ {
+				go func(k int) {
+					defer keyWg.Done()
 
-								s, err := f.Get(key)
-								if err != nil {
-									t.Fatal(err)
-								}
-								assertJsonStringEquals(t, s, key)
-							}(k)
-						}
+					s, err := f.Get(key)
+					if err != nil {
+						t.Fatal(err)
 					}
-
-					// Initial population and 2 cache reads concurrently
-					run()
-
-					// 3 reads after the data has been populated and made
-					// immutable
-					run()
-
-					keyWg.Wait()
-				}(j)
+					assertJsonStringEquals(t, s, key)
+				}(k)
 			}
-		}()
+		}
+
+		// Initial population and 2 cache reads concurrently
+		run()
+
+		// 3 reads after the data has been populated and made
+		// immutable
+		run()
+
+		keyWg.Wait()
+	}
+
+	for i := 0; i < 3; i++ {
+		f := cache.NewFrontend(dummyFrontOpts)
+		for j := 0; j < 3; j++ {
+			go test(t, f, j)
+		}
 	}
 
 	wg.Wait()

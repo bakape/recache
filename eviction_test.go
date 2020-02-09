@@ -145,8 +145,8 @@ func TestEviction(t *testing.T) {
 					err := frontends[0].EvictByFunc(
 						opts.timer,
 						func(k Key) (bool, error) {
-							// Record 1 is not included in other records and won't
-							// cause recursive evictions
+							// Record 1 is not included in other records and
+							// won't cause recursive evictions
 							return k.(recursiveData).Key == 1, nil
 						},
 					)

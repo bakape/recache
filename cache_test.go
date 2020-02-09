@@ -20,52 +20,49 @@ func TestGetRecordConcurentCaches(t *testing.T) {
 	t.Parallel()
 
 	var wg sync.WaitGroup
-	wg.Add(9 * 3)
+	wg.Add(27)
+
+	test := func(t *testing.T, cache *Cache, f *Frontend, j int) {
+		key := "key" + strconv.Itoa(j)
+
+		defer wg.Done()
+		var keyWg sync.WaitGroup
+		keyWg.Add(6)
+
+		run := func() {
+			// Concurrent key fetches
+			for k := 0; k < 3; k++ {
+				go func(k int) {
+					defer keyWg.Done()
+
+					s, err := f.Get(key)
+					if err != nil {
+						t.Fatal(err)
+					}
+					assertJsonStringEquals(t, s, key)
+				}(k)
+			}
+		}
+
+		// Initial population and 2 caches reads
+		// concurrently
+		run()
+
+		// 3 reads after the data has been populated and
+		// made immutable
+		run()
+
+		keyWg.Wait()
+	}
 
 	for j := 0; j < 3; j++ {
-		go func() {
-			var cache = NewCache(CacheOptions{})
-
-			for i := 0; i < 3; i++ {
-				go func() {
-					f := cache.NewFrontend(dummyFrontOpts)
-					for j := 0; j < 3; j++ {
-						go func(j int) {
-							key := "key" + strconv.Itoa(j)
-
-							defer wg.Done()
-							var keyWg sync.WaitGroup
-							keyWg.Add(6)
-
-							run := func() {
-								// Concurrent key fetches
-								for k := 0; k < 3; k++ {
-									go func(k int) {
-										defer keyWg.Done()
-
-										s, err := f.Get(key)
-										if err != nil {
-											t.Fatal(err)
-										}
-										assertJsonStringEquals(t, s, key)
-									}(k)
-								}
-							}
-
-							// Initial population and 2 caches reads
-							// concurrently
-							run()
-
-							// 3 reads after the data has been populated and
-							// made immutable
-							run()
-
-							keyWg.Wait()
-						}(j)
-					}
-				}()
+		var cache = NewCache(CacheOptions{})
+		for i := 0; i < 3; i++ {
+			f := cache.NewFrontend(dummyFrontOpts)
+			for j := 0; j < 3; j++ {
+				go test(t, cache, f, j)
 			}
-		}()
+		}
 	}
 
 	wg.Wait()
@@ -257,67 +254,67 @@ func testRecursion(t *testing.T, wg *sync.WaitGroup, caches [3]*Cache,
 ) {
 	wg.Add(9 * 3)
 
-	for cacheID := 0; cacheID < 3; cacheID++ {
-		go func(cacheID int) {
-			for frontendID := 0; frontendID < 3; frontendID++ {
-				go func(frontendID int) {
-					for keyID := 0; keyID < 3; keyID++ {
-						go func(keyID int) {
-							defer wg.Done()
-							var keyWg sync.WaitGroup
-							keyWg.Add(6)
+	test := func(t *testing.T, cacheID, frontendID, keyID int) {
+		defer wg.Done()
+		var keyWg sync.WaitGroup
+		keyWg.Add(6)
 
-							key := recursiveData{
-								Cache:    cacheID,
-								Frontend: frontendID,
-								Key:      keyID,
-							}
+		key := recursiveData{
+			Cache:    cacheID,
+			Frontend: frontendID,
+			Key:      keyID,
+		}
 
-							run := func() {
-								// Concurrent key fetches
-								for k := 0; k < 3; k++ {
-									go func(k int) {
-										defer keyWg.Done()
+		run := func() {
+			// Concurrent key fetches
+			for k := 0; k < 3; k++ {
+				go func(k int) {
+					defer keyWg.Done()
 
-										s, err := frontends[cacheID][frontendID].
-											Get(key)
-										if keyID != 2 {
-											// Normal generation
-											if err != nil {
-												t.Fatal(err)
-											}
-											std := recursiveStandard(
-												cacheID,
-												frontendID,
-												keyID,
-											)
-											var res recursiveNode
-											err = s.DecodeJSON(&res)
-											if err != nil {
-												t.Fatal(err)
-											}
-											assertEquals(t, res, std)
-										} else {
-											// Error passing
-											assertEquals(t, err, errSample)
-										}
-									}(k)
-								}
-							}
-							// Initial population and 2 cache reads concurrently
-							run()
-
-							// 3 reads after the data has been populated and
-							// made immutable
-							run()
-
-							keyWg.Wait()
-						}(keyID)
+					s, err := frontends[cacheID][frontendID].
+						Get(key)
+					if keyID != 2 {
+						// Normal generation
+						if err != nil {
+							t.Fatal(err)
+						}
+						std := recursiveStandard(
+							cacheID,
+							frontendID,
+							keyID,
+						)
+						var res recursiveNode
+						err = s.DecodeJSON(&res)
+						if err != nil {
+							t.Fatal(err)
+						}
+						assertEquals(t, res, std)
+					} else {
+						// Error passing
+						assertEquals(t, err, errSample)
 					}
-				}(frontendID)
+				}(k)
 			}
-		}(cacheID)
+		}
+		// Initial population and 2 cache reads concurrently
+		run()
+
+		// 3 reads after the data has been populated and
+		// made immutable
+		run()
+
+		keyWg.Wait()
 	}
+
+	for cacheID := 0; cacheID < 3; cacheID++ {
+		for frontendID := 0; frontendID < 3; frontendID++ {
+			for keyID := 0; keyID < 3; keyID++ {
+				go test(t, cacheID, frontendID, keyID)
+			}
+		}
+	}
+
+	wg.Wait()
 }
 
 // Assert cache metadata is still consistent with its data
