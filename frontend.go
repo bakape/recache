@@ -54,10 +54,9 @@ type Streamer interface {
 
 // A frontend for accessing the cache contents
 type Frontend struct {
-	id     uint
-	level  int
-	cache  *Cache
-	getter Getter
+	id, level int
+	cache     *Cache
+	getter    Getter
 }
 
 // Populates a record using the registered Getter
@@ -116,14 +115,15 @@ func (f *Frontend) populate(k Key, rec *record) (err error) {
 
 // Get a record by key and block until it has been generated
 func (f *Frontend) getGeneratedRecord(k Key) (rec *record, err error) {
-	rec, fresh := f.cache.getRecord(recordLocation{f.id, k})
+	loc := recordLocation{f.id, k}
+	rec, fresh := f.cache.getRecord(loc)
 	if fresh {
 		err = f.populate(k, rec)
 		if err != nil {
 			// Propagate error to any concurrent readers
 			rec.populationError = err
 
-			f.cache.evict(recordLocation{f.id, k})
+			f.cache.evict(loc, 0)
 		}
 
 		// Also unblock any concurrent readers, even on error.
@@ -168,20 +168,4 @@ func (f *Frontend) WriteHTTP(k Key, w http.ResponseWriter, r *http.Request,
 	h.Set("Content-Encoding", "gzip")
 	h.Set("ETag", rec.eTag)
 	return rec.WriteTo(w)
-}
-
-// Evict a record by key, if any
-func (f *Frontend) Evict(k Key) {
-	f.cache.evict(recordLocation{f.id, k})
-}
-
-// Evict all records from frontend
-func (f *Frontend) EvictAll() {
-	f.cache.evictFrontend(f.id)
-}
-
-// Evict keys from frontend using matcher function fn.
-// fn returns true, if a key must be evicted.
-func (f *Frontend) EvictByFunc(fn func(Key) (bool, error)) error {
-	return f.cache.evictByFunc(f.id, fn)
 }

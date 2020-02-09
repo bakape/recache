@@ -10,13 +10,13 @@ import (
 
 // Describes record location in a cache
 type recordLocation struct {
-	frontend uint
+	frontend int
 	key      Key
 }
 
 // Describes record location across all caches
 type intercacheRecordLocation struct {
-	cache uint
+	cache int
 	recordLocation
 }
 

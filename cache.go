@@ -8,13 +8,12 @@ import (
 
 var (
 	// Registry of all created caches. Require cacheMu to be held for access.
-	cacheMu        sync.RWMutex
-	cacheIDCounter uint
-	caches         = make(map[uint]*Cache)
+	cacheMu sync.RWMutex
+	caches  = make([]*Cache, 1)
 )
 
 // Get cache from registry by ID
-func getCache(id uint) *Cache {
+func getCache(id int) *Cache {
 	cacheMu.RLock()
 	defer cacheMu.RUnlock()
 	return caches[id]
@@ -26,7 +25,7 @@ type Cache struct {
 	mu sync.Mutex
 
 	// Global ID of cache
-	id uint
+	id int
 
 	// Total used memory and limit
 	memoryLimit, memoryUsed int
@@ -36,8 +35,7 @@ type Cache struct {
 	lruList  linkedList
 
 	// Storage for each individual frontend
-	frontendIDCounter uint
-	buckets           map[uint]map[Key]recordWithMeta
+	frontends []map[Key]recordWithMeta
 }
 
 // Options for new cache creation
@@ -60,13 +58,11 @@ func NewCache(opts CacheOptions) (c *Cache) {
 	defer cacheMu.Unlock()
 
 	c = &Cache{
-		id:          cacheIDCounter,
+		id:          len(caches),
 		memoryLimit: int(opts.MemoryLimit),
 		lruLimit:    opts.LRULimit,
-		buckets:     make(map[uint]map[Key]recordWithMeta),
 	}
-	caches[cacheIDCounter] = c
-	cacheIDCounter++
+	caches = append(caches, c)
 	return c
 }
 
@@ -89,7 +85,7 @@ func (c *Cache) NewFrontend(opts FrontendOptions) *Frontend {
 	defer c.mu.Unlock()
 
 	f := &Frontend{
-		id:     c.frontendIDCounter,
+		id:     len(c.frontends),
 		cache:  c,
 		getter: opts.Get,
 	}
@@ -99,8 +95,7 @@ func (c *Cache) NewFrontend(opts FrontendOptions) *Frontend {
 		f.level = gzip.DefaultCompression
 	}
 
-	c.buckets[c.frontendIDCounter] = make(map[Key]recordWithMeta)
-	c.frontendIDCounter++
+	c.frontends = append(c.frontends, make(map[Key]recordWithMeta))
 	return f
 }
 
@@ -122,7 +117,7 @@ func (c *Cache) getRecord(loc recordLocation) (rec *record, fresh bool) {
 	}
 	now := time.Now()
 	recWithMeta.lastUsed = now
-	c.buckets[loc.frontend][loc.key] = recWithMeta
+	c.frontends[loc.frontend][loc.key] = recWithMeta
 
 	// Attempt to evict up to the last 2 records due to LRU or memory
 	// constraints. Doing this here simplifies locking patterns while retaining
@@ -133,7 +128,7 @@ func (c *Cache) getRecord(loc recordLocation) (rec *record, fresh bool) {
 			break
 		}
 		if c.memoryLimit != 0 && c.memoryUsed > c.memoryLimit {
-			c.evictWithLock(last)
+			c.evictWithLock(last, 0)
 			continue
 		}
 		if c.lruLimit != 0 {
@@ -142,7 +137,7 @@ func (c *Cache) getRecord(loc recordLocation) (rec *record, fresh bool) {
 				panic("linked list points to evicted record")
 			}
 			if lruRec.lastUsed.Add(c.lruLimit).Before(now) {
-				c.evictWithLock(last)
+				c.evictWithLock(last, 0)
 				continue
 			}
 		}
@@ -156,7 +151,7 @@ func (c *Cache) getRecord(loc recordLocation) (rec *record, fresh bool) {
 //
 // Requires lock on c.mu.
 func (c *Cache) record(loc recordLocation) (recordWithMeta, bool) {
-	rec, ok := c.buckets[loc.frontend][loc.key]
+	rec, ok := c.frontends[loc.frontend][loc.key]
 	return rec, ok
 }
 
@@ -180,7 +175,7 @@ func (c *Cache) setUsedMemory(src *record, loc recordLocation, memoryUsed int) {
 		return
 	}
 	rec.memoryUsed = memoryUsed
-	c.buckets[loc.frontend][loc.key] = rec
+	c.frontends[loc.frontend][loc.key] = rec
 	c.memoryUsed += memoryUsed
 }
 
@@ -195,102 +190,16 @@ func registerInclusion(parent, child intercacheRecordLocation) {
 		return // Already evicted
 	}
 	rec.includedIn = append(rec.includedIn, parent)
-	c.buckets[child.frontend][child.key] = rec
-}
-
-// Evict record from cache
-func evict(loc intercacheRecordLocation) {
-	getCache(loc.cache).evict(loc.recordLocation)
-}
-
-// Evict record from cache
-func (c *Cache) evict(loc recordLocation) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.evictWithLock(loc)
-}
-
-// Evict record from cache. Requires lock on c.mu.
-func (c *Cache) evictWithLock(loc recordLocation) {
-	rec, ok := c.record(loc)
-	if !ok {
-		return
-	}
-	delete(c.buckets[loc.frontend], loc.key)
-	c.lruList.Remove(rec.node)
-	c.memoryUsed -= rec.memoryUsed
-
-	for _, ch := range rec.includedIn {
-		if ch.cache == c.id {
-			// Hot path to reduce lock contention
-			c.evictWithLock(ch.recordLocation)
-		} else {
-			// Separate goroutine to prevent lock intersection
-			go evict(ch)
-		}
-	}
-}
-
-// The all keys of specific frontend.
-func (c *Cache) evictFrontend(frontend uint) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.evictFrontendWithLock(frontend)
-}
-
-// The all keys of specific frontend. Requires lock on c.mu.
-func (c *Cache) evictFrontendWithLock(frontend uint) {
-	for _, k := range c.keys(frontend) {
-		c.evictWithLock(recordLocation{frontend, k})
-	}
+	c.frontends[child.frontend][child.key] = rec
 }
 
 // Make copy of frontend keys to prevent itterator invalidation.
 // Requires lock on c.mu.
-func (c *Cache) keys(frontend uint) []Key {
-	m := c.buckets[frontend]
+func (c *Cache) keys(frontend int) []Key {
+	m := c.frontends[frontend]
 	keys := make([]Key, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
 	return keys
-}
-
-// Evict all records from cache
-func (c *Cache) EvictAll() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for i := uint(0); i < c.frontendIDCounter; i++ {
-		c.evictFrontendWithLock(i)
-	}
-}
-
-// Evict keys from frontend using matcher function fn.
-// fn returns true, if a key must be evicted.
-func (c *Cache) evictByFunc(frontend uint, fn func(Key) (bool, error),
-) (err error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	var (
-		b     = c.buckets[frontend]
-		evict bool
-	)
-	for _, k := range c.keys(frontend) {
-		// Check, if key not already evicted by recursive eviction, to reduce
-		// potentially expensive matcher function calls
-		if _, ok := b[k]; !ok {
-			continue
-		}
-
-		evict, err = fn(k)
-		if err != nil {
-			return
-		}
-		if evict {
-			c.evictWithLock(recordLocation{frontend, k})
-		}
-	}
-
-	return
 }
