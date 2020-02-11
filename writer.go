@@ -5,15 +5,6 @@ import (
 	"compress/gzip"
 	"crypto/sha1"
 	"io"
-	"sync"
-)
-
-var (
-	buffPool = sync.Pool{
-		New: func() interface{} {
-			return make([]byte, 4<<10)
-		},
-	}
 )
 
 // Provides utility methods for building record buffers and recursive record
@@ -53,9 +44,9 @@ func (rw *RecordWriter) Write(p []byte) (n int, err error) {
 func (rw *RecordWriter) ReadFrom(r io.Reader) (n int64, err error) {
 	var (
 		m   int
-		buf = buffPool.Get().([]byte)
+		arr [4 << 10]byte
+		buf = arr[:]
 	)
-	defer buffPool.Put(buf)
 
 	for {
 		m, err = r.Read(buf)
