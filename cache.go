@@ -1,7 +1,7 @@
 package recache
 
 import (
-	"compress/gzip"
+	"compress/flate"
 	"sync"
 	"time"
 )
@@ -74,7 +74,7 @@ type FrontendOptions struct {
 	Get Getter
 
 	// Level of compression to use for storing records.
-	// Defaults to gzip.DefaultCompression.
+	// Defaults to flate.DefaultCompression.
 	Level *int
 }
 
@@ -92,7 +92,7 @@ func (c *Cache) NewFrontend(opts FrontendOptions) *Frontend {
 	if opts.Level != nil {
 		f.level = *opts.Level
 	} else {
-		f.level = gzip.DefaultCompression
+		f.level = flate.DefaultCompression
 	}
 
 	c.frontends = append(c.frontends, make(map[Key]recordWithMeta))
@@ -180,7 +180,7 @@ func (c *Cache) setUsedMemory(src *record, loc recordLocation, memoryUsed int) {
 }
 
 // Register a record as being used in another record
-func registerInclusion(parent, child intercacheRecordLocation) {
+func registerDependance(parent, child intercacheRecordLocation) {
 	c := getCache(child.cache)
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -1,7 +1,7 @@
 package recache
 
 import (
-	"compress/gzip"
+	"compress/flate"
 	"crypto/sha1"
 	"encoding/json"
 	"io"
@@ -48,8 +48,9 @@ type recordWithMeta struct {
 type record struct {
 	semaphore semaphore
 
-	// Contained data and its SHA1 hash
+	// Contained data and metainformation
 	data componentNode
+	frameDescriptor
 	hash [sha1.Size]byte
 	eTag string // generated from hash
 
@@ -121,15 +122,11 @@ type recordDecoder struct {
 }
 
 func (r recordDecoder) DecodeJSON(dst interface{}) (err error) {
-	uz := r.Unzip()
-	defer uz.Close()
-	return json.NewDecoder(uz).Decode(dst)
+	return json.NewDecoder(r.Decompress()).Decode(dst)
 }
 
-func (r recordDecoder) Unzip() io.ReadCloser {
-	var u recordUnzipper
-	u.Reader, u.error = gzip.NewReader(r.NewReader())
-	return u
+func (r recordDecoder) Decompress() io.Reader {
+	return flate.NewReader(r.NewReader())
 }
 
 func (r recordDecoder) SHA1() [sha1.Size]byte {
@@ -138,17 +135,4 @@ func (r recordDecoder) SHA1() [sha1.Size]byte {
 
 func (r recordDecoder) ETag() string {
 	return r.eTag
-}
-
-// Adapter for smoother error handling
-type recordUnzipper struct {
-	*gzip.Reader
-	error
-}
-
-func (r recordUnzipper) Read(p []byte) (n int, err error) {
-	if r.error != nil {
-		return 0, r.error
-	}
-	return r.Reader.Read(p)
 }

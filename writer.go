@@ -2,8 +2,10 @@ package recache
 
 import (
 	"bytes"
-	"compress/gzip"
+	"compress/flate"
 	"crypto/sha1"
+	"hash"
+	"hash/adler32"
 	"io"
 )
 
@@ -14,41 +16,54 @@ type RecordWriter struct {
 	cache, frontend, level int
 	key                    Key
 
-	gzWriter *gzip.Writer
-	pending  bytes.Buffer
+	compressor *flate.Writer
+	current    struct { // Deflate frame currently being compressed
+		bytes.Buffer
+		frameDescriptor
+	}
+	hasher hash.Hash32 // Adler32 checksum builder
 
 	data componentNode
 	last *componentNode
 }
 
-// Write non-gzipped data to the record for storage
+// Write non-compressed data to the record for storage
 func (rw *RecordWriter) Write(p []byte) (n int, err error) {
 	if !rw.compressing {
 		// Initialize or reset pipeline state.
-		// Reuse allocated resources, if possible
-		rw.pending.Reset()
-		if rw.gzWriter == nil {
-			rw.gzWriter, err = gzip.NewWriterLevel(&rw.pending, rw.level)
+		// Reuse allocated resources, if possible.
+		if rw.compressor == nil {
+			rw.compressor, err = flate.NewWriter(&rw.current, rw.level)
 			if err != nil {
 				return
 			}
+			rw.hasher = adler32.New()
 		} else {
-			rw.gzWriter.Reset(&rw.pending)
+			rw.current.Reset()
+			rw.current.frameDescriptor = frameDescriptor{}
+			rw.hasher.Reset()
+			rw.compressor.Reset(&rw.current)
 		}
 		rw.compressing = true
 	}
-	return rw.gzWriter.Write(p)
+
+	n, err = rw.compressor.Write(p)
+	if err != nil {
+		return
+	}
+	rw.current.size += uint32(n)
+	_, err = rw.hasher.Write(p)
+	return
 }
 
-// Read non-gzipped data from r and write it to the record for storage
+// Read non-compressed data from r and write it to the record for storage
 func (rw *RecordWriter) ReadFrom(r io.Reader) (n int64, err error) {
 	var (
 		m   int
 		arr [4 << 10]byte
-		buf = arr[:]
 	)
-
 	for {
+		buf := arr[:]
 		m, err = r.Read(buf)
 		n += int64(m)
 		switch err {
@@ -87,7 +102,7 @@ func (rw *RecordWriter) Include(f *Frontend, k Key) (err error) {
 
 func (rw *RecordWriter) bind(f *Frontend, k Key) (rec *record, err error) {
 	// Finish any previous buffer writes
-	err = rw.flushPending(false)
+	err = rw.flush(false)
 	if err != nil {
 		return
 	}
@@ -97,7 +112,7 @@ func (rw *RecordWriter) bind(f *Frontend, k Key) (rec *record, err error) {
 		return
 	}
 
-	registerInclusion(
+	registerDependance(
 		intercacheRecordLocation{
 			cache: rw.cache,
 			recordLocation: recordLocation{
@@ -144,23 +159,26 @@ func (rw *RecordWriter) BindJSON(
 	return s.DecodeJSON(dst)
 }
 
-// Flush any pending buffer.
+// Flush the current deflate stream, if any.
+//
 // final: this is the final flush and copying of buffer is not required
-func (rw *RecordWriter) flushPending(final bool) (err error) {
+func (rw *RecordWriter) flush(final bool) (err error) {
 	if rw.compressing {
-		err = rw.gzWriter.Close()
+		err = rw.compressor.Close()
 		if err != nil {
 			return
 		}
 
 		var buf buffer
 		if final {
-			buf.data = rw.pending.Bytes()
+			buf.data = rw.current.Bytes()
 		} else {
-			buf.data = make([]byte, rw.pending.Len())
-			copy(buf.data, rw.pending.Bytes())
+			buf.data = make([]byte, rw.current.Len())
+			copy(buf.data, rw.current.Bytes())
 		}
 		buf.hash = sha1.Sum(buf.data)
+		buf.frameDescriptor = rw.current.frameDescriptor
+		buf.frameDescriptor.checksum = rw.hasher.Sum32()
 
 		rw.append(buf)
 		rw.compressing = false

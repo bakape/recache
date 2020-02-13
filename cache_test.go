@@ -1,7 +1,7 @@
 package recache
 
 import (
-	"compress/gzip"
+	"compress/flate"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -237,7 +237,7 @@ func prepareRecursion(memoryLimit uint, lruLimit time.Duration,
 			MemoryLimit: memoryLimit,
 			LRULimit:    lruLimit,
 		})
-		l := gzip.BestCompression
+		l := flate.BestCompression
 		for j := 0; j < 3; j++ {
 			frontends[i][j] = caches[i].NewFrontend(FrontendOptions{
 				Get:   getter,

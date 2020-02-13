@@ -11,6 +11,7 @@ type component interface {
 	NewReader() io.Reader
 	Size() int
 	Hash() [sha1.Size]byte
+	GetFrameDescriptor() frameDescriptor
 }
 
 // Common part of both buffer and reference components
@@ -22,9 +23,10 @@ func (c componentCommon) Hash() [sha1.Size]byte {
 	return c.hash
 }
 
-// Contains a gzipped buffer
+// Contains a deflate-compressed buffer
 type buffer struct {
 	componentCommon
+	frameDescriptor
 	data []byte
 }
 
@@ -41,6 +43,10 @@ func (b buffer) NewReader() io.Reader {
 
 func (b buffer) Size() int {
 	return len(b.data)
+}
+
+func (b buffer) GetFrameDescriptor() frameDescriptor {
+	return b.frameDescriptor
 }
 
 // Adapter for reading data from component w/o mutating it
@@ -70,4 +76,8 @@ type recordReference struct {
 func (r recordReference) Size() int {
 	// A record reference is considered to not store any data itself
 	return 0
+}
+
+func (r recordReference) GetFrameDescriptor() frameDescriptor {
+	return r.frameDescriptor
 }

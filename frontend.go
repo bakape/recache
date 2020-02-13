@@ -39,11 +39,11 @@ type Streamer interface {
 	// dst: pointer to destination variable
 	DecodeJSON(dst interface{}) error
 
-	// Create a new io.ReadCloser for the unzipped content of this stream.
+	// Create a new io.ReadCloser for the Decompressped content of this stream.
 	//
 	// It is the caller's responsibility to call Close on the io.ReadCloser
 	// when finished reading.
-	Unzip() io.ReadCloser
+	Decompress() io.Reader
 
 	// Return SHA1 hash of the content
 	SHA1() [sha1.Size]byte
@@ -72,19 +72,20 @@ func (f *Frontend) populate(k Key, rec *record) (err error) {
 		return
 	}
 
-	// Flush any unclosed gzip buffers
-	err = rw.flushPending(true)
+	// Flush any unclosed deflate streams
+	err = rw.flush(true)
 	if err != nil {
 		return
 	}
 
-	// Much of our code assumes there is at least oner component in a record.
+	// Much of our code assumes there is at least one component in a record.
 	// 0 component records don't have any use anyway.
 	if rw.data.component == nil {
 		return ErrEmptyRecord
 	}
 
 	rec.data = rw.data
+	rec.frameDescriptor = rw.current.frameDescriptor
 	memoryUsed := 0
 	if rec.data.next == nil {
 		// Most records will have only one component, so this is a hotpath
@@ -92,8 +93,14 @@ func (f *Frontend) populate(k Key, rec *record) (err error) {
 		rec.hash = rec.data.Hash()
 	} else {
 		h := sha1.New()
+		first := true
 		for c := &rec.data; c != nil; c = c.next {
 			memoryUsed += c.Size()
+			if !first {
+				rec.frameDescriptor.Append(c.GetFrameDescriptor())
+			} else {
+				first = false
+			}
 
 			// Hash the child hash to better propagate changes
 			arr := c.Hash()
@@ -153,7 +160,7 @@ func (f *Frontend) Get(k Key) (s Streamer, err error) {
 
 // Retrieve or generate data by key and write it to w.
 // Writes ETag to w and returns 304 on ETag match without writing data.
-// Sets "Content-Encoding" header to "gzip".
+// Sets "Content-Encoding" header to "deflate".
 func (f *Frontend) WriteHTTP(k Key, w http.ResponseWriter, r *http.Request,
 ) (n int64, err error) {
 	rec, err := f.getGeneratedRecord(k)
@@ -166,7 +173,7 @@ func (f *Frontend) WriteHTTP(k Key, w http.ResponseWriter, r *http.Request,
 	}
 
 	h := w.Header()
-	h.Set("Content-Encoding", "gzip")
+	h.Set("Content-Encoding", "deflate")
 	h.Set("ETag", rec.eTag)
 	return rec.WriteTo(w)
 }
