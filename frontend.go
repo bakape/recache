@@ -214,13 +214,16 @@ func (f *Frontend) WriteHTTP(k Key, w http.ResponseWriter, r *http.Request,
 	}
 	n += m
 
-	var footer [4]byte
-	binary.BigEndian.PutUint32(footer[:], rec.checksum)
+	// Final empty deflate block and adler32 checksum
+	footer := [6]byte{
+		0: 0x03,
+	}
+	binary.BigEndian.PutUint32(footer[2:], rec.checksum)
 	_, err = w.Write(footer[:])
 	if err != nil {
 		return
 	}
-	n += 4
+	n += 6
 
 	return
 }

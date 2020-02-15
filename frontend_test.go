@@ -1,9 +1,12 @@
 package recache
 
 import (
+	"bytes"
+	"compress/zlib"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http/httptest"
 	"strconv"
 	"sync"
@@ -144,6 +147,7 @@ func TestWriteHTTP(t *testing.T) {
 	}
 
 	for i := range cases {
+		i := i
 		c := cases[i]
 		t.Run(c.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
@@ -168,6 +172,19 @@ func TestWriteHTTP(t *testing.T) {
 					t.Fatal(err)
 				}
 				assertEquals(t, s.ETag(), etag)
+
+				var body bytes.Buffer
+				zr, err := zlib.NewReader(rec.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer zr.Close()
+				_, err = io.Copy(&body, zr)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Logf("got body: %s", rec.Body.String())
+				assertEquals(t, body.String(), "1\n")
 
 				h := s.SHA1()
 				assertEquals(
