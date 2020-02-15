@@ -54,9 +54,9 @@ type Streamer interface {
 
 // A frontend for accessing the cache contents
 type Frontend struct {
-	id, level int
-	cache     *Cache
-	getter    Getter
+	id     int
+	cache  *Cache
+	getter Getter
 }
 
 // Populates a record using the registered Getter
@@ -65,7 +65,6 @@ func (f *Frontend) populate(k Key, rec *record) (err error) {
 		cache:    f.cache.id,
 		frontend: f.id,
 		key:      k,
-		level:    f.level,
 	}
 	err = f.getter(k, &rw)
 	if err != nil {
@@ -85,7 +84,7 @@ func (f *Frontend) populate(k Key, rec *record) (err error) {
 	}
 
 	rec.data = rw.data
-	rec.frameDescriptor = rw.current.frameDescriptor
+	rec.frameDescriptor = rw.data.GetFrameDescriptor()
 	memoryUsed := 0
 	if rec.data.next == nil {
 		// Most records will have only one component, so this is a hotpath

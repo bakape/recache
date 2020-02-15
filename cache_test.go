@@ -1,7 +1,6 @@
 package recache
 
 import (
-	"compress/flate"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -58,7 +57,7 @@ func TestGetRecordConcurentCaches(t *testing.T) {
 	for j := 0; j < 3; j++ {
 		var cache = NewCache(CacheOptions{})
 		for i := 0; i < 3; i++ {
-			f := cache.NewFrontend(dummyFrontOpts)
+			f := cache.NewFrontend(dummyGetter)
 			for j := 0; j < 3; j++ {
 				go test(t, cache, f, j)
 			}
@@ -237,12 +236,8 @@ func prepareRecursion(memoryLimit uint, lruLimit time.Duration,
 			MemoryLimit: memoryLimit,
 			LRULimit:    lruLimit,
 		})
-		l := flate.BestCompression
 		for j := 0; j < 3; j++ {
-			frontends[i][j] = caches[i].NewFrontend(FrontendOptions{
-				Get:   getter,
-				Level: &l,
-			})
+			frontends[i][j] = caches[i].NewFrontend(getter)
 		}
 	}
 

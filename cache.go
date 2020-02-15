@@ -10,6 +10,12 @@ var (
 	// Registry of all created caches. Require cacheMu to be held for access.
 	cacheMu sync.RWMutex
 	caches  = make([]*Cache, 1)
+
+	// Global deflate compression level configuration.
+	//
+	// Can only be changed before the first Cache is constructed and must not be
+	// mutated after.
+	CompressionLevel = flate.DefaultCompression
 )
 
 // Get cache from registry by ID
@@ -66,35 +72,21 @@ func NewCache(opts CacheOptions) (c *Cache) {
 	return c
 }
 
-// Options for creating a new cache frontend
-type FrontendOptions struct {
-	// Will be used for generating fresh cache records for the given key by
-	// the cache engine. These records will be stored by the cache engine and
-	// must not be modified after Get() returns. Get() must be thread-safe.
-	Get Getter
-
-	// Level of compression to use for storing records.
-	// Defaults to flate.DefaultCompression.
-	Level *int
-}
-
 // Create new Frontend for accessing the cache.
 // A Frontend must only be created using this method.
-func (c *Cache) NewFrontend(opts FrontendOptions) *Frontend {
+//
+// get() will be used for generating fresh cache records for the given key by
+// the cache engine. These records will be stored by the cache engine and
+// must not be modified after Get() returns. Get() must be thread-safe.
+func (c *Cache) NewFrontend(get Getter) *Frontend {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	f := &Frontend{
 		id:     len(c.frontends),
 		cache:  c,
-		getter: opts.Get,
+		getter: get,
 	}
-	if opts.Level != nil {
-		f.level = *opts.Level
-	} else {
-		f.level = flate.DefaultCompression
-	}
-
 	c.frontends = append(c.frontends, make(map[Key]recordWithMeta))
 	return f
 }

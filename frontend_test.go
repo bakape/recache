@@ -11,10 +11,8 @@ import (
 )
 
 // Simply writes the key to the record
-var dummyFrontOpts = FrontendOptions{
-	Get: func(k Key, rw *RecordWriter) error {
-		return json.NewEncoder(rw).Encode(k)
-	},
+var dummyGetter = func(k Key, rw *RecordWriter) error {
+	return json.NewEncoder(rw).Encode(k)
 }
 
 func TestGetRecord(t *testing.T) {
@@ -22,7 +20,7 @@ func TestGetRecord(t *testing.T) {
 
 	var (
 		cache = NewCache(CacheOptions{})
-		f     = cache.NewFrontend(dummyFrontOpts)
+		f     = cache.NewFrontend(dummyGetter)
 	)
 
 	const key = "key1"
@@ -47,7 +45,7 @@ func TestGetRecordConcurrentFetches(t *testing.T) {
 
 	var (
 		cache = NewCache(CacheOptions{})
-		f     = cache.NewFrontend(dummyFrontOpts)
+		f     = cache.NewFrontend(dummyGetter)
 		wg    sync.WaitGroup
 	)
 	wg.Add(6)
@@ -120,7 +118,7 @@ func TestGetRecordConcurentFrontends(t *testing.T) {
 	}
 
 	for i := 0; i < 3; i++ {
-		f := cache.NewFrontend(dummyFrontOpts)
+		f := cache.NewFrontend(dummyGetter)
 		for j := 0; j < 3; j++ {
 			go test(t, f, j)
 		}
@@ -135,7 +133,7 @@ func TestWriteHTTP(t *testing.T) {
 	var etag string
 
 	cache := NewCache(CacheOptions{})
-	f := cache.NewFrontend(dummyFrontOpts)
+	f := cache.NewFrontend(dummyGetter)
 
 	cases := [...]struct {
 		name string
