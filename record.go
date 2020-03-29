@@ -62,7 +62,7 @@ type record struct {
 }
 
 // Linked list node for storing components. This is optimal, as most of the time
-// a record will only have one component.
+// a record will only have one component and will never have zero components.
 type componentNode struct {
 	component
 	next *componentNode

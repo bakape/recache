@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -133,65 +134,110 @@ func TestGetRecordConcurentFrontends(t *testing.T) {
 func TestWriteHTTP(t *testing.T) {
 	t.Parallel()
 
-	var etag string
+	var (
+		etag         string
+		_, frontends = prepareRecursion(0, 0)
+		f            = frontends[0][1]
+		key          = recursiveData{
+			Frontend: 1,
+			Key:      1,
+		}
+	)
 
-	cache := NewCache(CacheOptions{})
-	f := cache.NewFrontend(dummyGetter)
+	stdBuf, err := json.Marshal(recursiveStandard(0, 1, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	std := string(stdBuf)
 
-	cases := [...]struct {
-		name string
+	cases := []struct {
+		useDeflate bool
+		etagMode   uint8
+		name       string
 	}{
-		{"first request"},
-		{"no etag match"},
-		{"etag match"},
+		{
+			name:       "first request",
+			useDeflate: true,
+		},
+		{
+			name:       "no etag match",
+			etagMode:   1,
+			useDeflate: true,
+		},
+		{
+			name:       "etag match",
+			etagMode:   2,
+			useDeflate: true,
+		},
+	}
+	for i := 0; i < 3; i++ {
+		c := cases[i]
+		c.name += " no deflate"
+		c.useDeflate = true
+		cases = append(cases, c)
 	}
 
 	for i := range cases {
-		i := i
 		c := cases[i]
 		t.Run(c.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest("GET", "/", nil)
-			if i == 2 {
+			if c.useDeflate {
+				req.Header.Set("Accept-Encoding", "gzip, deflate")
+			}
+			if c.etagMode == 2 {
 				req.Header.Set("If-None-Match", etag)
 			}
 
-			_, err := f.WriteHTTP(1, rec, req)
+			_, err := f.WriteHTTP(key, rec, req)
 			if err != nil {
 				t.Fatal(err)
 			}
-			switch i {
+			switch c.etagMode {
 			case 0:
 				etag = rec.Header().Get("ETag")
 				if etag == "" {
 					t.Fatal("no etag set")
 				}
 
-				s, err := f.Get(1)
+				s, err := f.Get(key)
 				if err != nil {
 					t.Fatal(err)
 				}
 				assertEquals(t, s.ETag(), etag)
 
-				var body bytes.Buffer
-				zr, err := zlib.NewReader(rec.Body)
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer zr.Close()
-				_, err = io.Copy(&body, zr)
-				if err != nil {
-					t.Fatal(err)
+				body := rec.Body
+				if c.useDeflate {
+					body = new(bytes.Buffer)
+					zr, err := zlib.NewReader(rec.Body)
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer zr.Close()
+					_, err = io.Copy(body, zr)
+					if err != nil {
+						t.Fatal(err)
+					}
 				}
 				t.Logf("got body: %s", rec.Body.String())
-				assertEquals(t, body.String(), "1\n")
+				assertEquals(
+					t,
+					strings.ReplaceAll(body.String(), "\n", ""),
+					std,
+				)
 
 				h := s.SHA1()
+				var pat string
+				if c.useDeflate {
+					pat = `"%s"`
+				} else {
+					pat = `"%s-uc"`
+				}
 				assertEquals(
 					t,
 					etag,
 					fmt.Sprintf(
-						`"%s"`,
+						pat,
 						base64.RawStdEncoding.EncodeToString(h[:]),
 					),
 				)

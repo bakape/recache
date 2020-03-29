@@ -1,6 +1,7 @@
 package recache
 
 import (
+	"compress/flate"
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/binary"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 var (
@@ -168,62 +170,88 @@ func (f *Frontend) WriteHTTP(k Key, w http.ResponseWriter, r *http.Request,
 	if err != nil {
 		return
 	}
-	if r.Header.Get("If-None-Match") == rec.eTag {
+
+	supportsDeflate := strings.Contains(
+		r.Header.Get("Accept-Encoding"),
+		"deflate",
+	)
+
+	eTag := rec.eTag
+	if !supportsDeflate {
+		// Different eTag to maintain strong eTag byte-equivalence guarantee by
+		// differing it from the compressed eTag.
+		eTag = eTag[:len(eTag)-2] + `-uc"`
+	}
+	if r.Header.Get("If-None-Match") == eTag {
 		w.WriteHeader(304)
 		return
 	}
-
 	h := w.Header()
 	h.Set("ETag", rec.eTag)
-	h.Set("Content-Encoding", "deflate")
 
-	// Deflate compression, as specified by the HTTP spec, actually expects the
-	// zlib file format. Write the zlib header and footer here.
+	if supportsDeflate {
+		// If client accepts deflate compression use efficient deflate stream
+		// concatenation
+		h.Set("Content-Encoding", "deflate")
 
-	header := [2]byte{
-		0: 0x78, // Deflate compression with default window size,
+		// Deflate compression, as specified by the HTTP spec, actually expects
+		// the zlib file format. Write the zlib header and footer here.
+		header := [2]byte{
+			0: 0x78, // Deflate compression with default window size
+		}
+
+		// Writes compression level into first 2 bits of byte 2
+		switch CompressionLevel {
+		case -2, 0, 1:
+			header[1] = 0 << 6 // fastest
+		case 2, 3, 4, 5:
+			header[1] = 1 << 6 // fast
+		case 6, -1:
+			header[1] = 2 << 6 // default
+		case 7, 8, 9:
+			header[1] = 3 << 6 // best
+		default:
+			err = fmt.Errorf("unknown compression level: %d", CompressionLevel)
+			return
+		}
+
+		// Writes mod-31 checksum into last 5 bytes of header
+		header[1] += uint8(31 - (uint16(header[0])<<8+uint16(header[1]))%31)
+
+		_, err = w.Write(header[:])
+		if err != nil {
+			return
+		}
+		n = 2
+
+		var m int64
+		m, err = rec.WriteTo(w)
+		if err != nil {
+			return
+		}
+		n += m
+
+		// Final empty deflate block and adler32 checksum
+		footer := [6]byte{
+			0: 0x03,
+		}
+		binary.BigEndian.PutUint32(footer[2:], rec.checksum)
+		_, err = w.Write(footer[:])
+		if err != nil {
+			return
+		}
+		n += 6
+	} else {
+		// Streaming decompression for clients that don't accept deflate
+		// compression
+
+		dr := flate.NewReader(rec.NewReader())
+		n, err = io.Copy(w, dr)
+		if err != nil {
+			return
+		}
+		err = dr.Close()
 	}
-
-	// Writes compression level into first 2 bits of byte 2
-	switch CompressionLevel {
-	case -2, 0, 1:
-		header[1] = 0 << 6 // fastest
-	case 2, 3, 4, 5:
-		header[1] = 1 << 6 // fast
-	case 6, -1:
-		header[1] = 2 << 6 // default
-	case 7, 8, 9:
-		header[1] = 3 << 6 // best
-	default:
-		err = fmt.Errorf("unknown compression level: %d", CompressionLevel)
-		return
-	}
-
-	// Writes mod-31 checksum into last 5 bytes of header
-	header[1] += uint8(31 - (uint16(header[0])<<8+uint16(header[1]))%31)
-
-	_, err = w.Write(header[:])
-	if err != nil {
-		return
-	}
-	n = 2
-
-	m, err := rec.WriteTo(w)
-	if err != nil {
-		return
-	}
-	n += m
-
-	// Final empty deflate block and adler32 checksum
-	footer := [6]byte{
-		0: 0x03,
-	}
-	binary.BigEndian.PutUint32(footer[2:], rec.checksum)
-	_, err = w.Write(footer[:])
-	if err != nil {
-		return
-	}
-	n += 6
 
 	return
 }
