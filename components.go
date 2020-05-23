@@ -1,6 +1,8 @@
 package recache
 
 import (
+	"bytes"
+	"compress/flate"
 	"crypto/sha1"
 	"io"
 )
@@ -12,6 +14,7 @@ type component interface {
 	Size() int
 	Hash() [sha1.Size]byte
 	GetFrameDescriptor() frameDescriptor
+	Decompress() io.Reader
 }
 
 // Common part of both buffer and reference components
@@ -36,9 +39,7 @@ func (b buffer) WriteTo(w io.Writer) (int64, error) {
 }
 
 func (b buffer) NewReader() io.Reader {
-	return &bufferReader{
-		buffer: b,
-	}
+	return bytes.NewReader(b.data)
 }
 
 func (b buffer) Size() int {
@@ -49,28 +50,15 @@ func (b buffer) GetFrameDescriptor() frameDescriptor {
 	return b.frameDescriptor
 }
 
-// Adapter for reading data from component w/o mutating it
-type bufferReader struct {
-	off int
-	buffer
-}
-
-func (r *bufferReader) Read(p []byte) (n int, err error) {
-	if len(p) == 0 {
-		return
-	}
-	if r.off >= len(r.data) {
-		return 0, io.EOF
-	}
-	n = copy(p, r.data[r.off:])
-	r.off += n
-	return
+// Read component as decompressed stream
+func (b buffer) Decompress() io.Reader {
+	return flate.NewReader(b.NewReader())
 }
 
 // Reference to another record
 type recordReference struct {
 	componentCommon
-	*record
+	*Record
 }
 
 func (r recordReference) Size() int {

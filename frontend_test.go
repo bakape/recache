@@ -173,7 +173,7 @@ func TestWriteHTTP(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		c := cases[i]
 		c.name += " no deflate"
-		c.useDeflate = true
+		c.useDeflate = false
 		cases = append(cases, c)
 	}
 
@@ -204,7 +204,13 @@ func TestWriteHTTP(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				assertEquals(t, s.ETag(), etag)
+				var stdETag string
+				if c.useDeflate {
+					stdETag = s.ETag()
+				} else {
+					stdETag = s.ETagDecompressed()
+				}
+				assertEquals(t, stdETag, etag)
 
 				body := rec.Body
 				if c.useDeflate {

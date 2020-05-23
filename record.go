@@ -41,11 +41,11 @@ type recordWithMeta struct {
 	// lock on the cache mutex held.
 	//
 	// Record must be a pointer, because it contains mutexes.
-	rec *record
+	rec *Record
 }
 
 // Data storage unit in the cache. Linked to a single Key on a Frontend.
-type record struct {
+type Record struct {
 	semaphore semaphore
 
 	// Contained data and metainformation
@@ -68,7 +68,8 @@ type componentNode struct {
 	next *componentNode
 }
 
-func (r *record) WriteTo(w io.Writer) (n int64, err error) {
+// Implements io.WrWriteTo
+func (r *Record) WriteTo(w io.Writer) (n int64, err error) {
 	for c, m := &r.data, int64(0); c != nil; c = c.next {
 		m, err = c.WriteTo(w)
 		if err != nil {
@@ -79,19 +80,51 @@ func (r *record) WriteTo(w io.Writer) (n int64, err error) {
 	return
 }
 
-func (r *record) NewReader() io.Reader {
+// Create a new io.Reader for this stream.
+// Multiple instances of such an io.Reader can exist and be read
+// concurrently.
+func (r *Record) NewReader() io.Reader {
 	return &recordReader{
-		next:    r.data.next,
 		current: r.data.NewReader(),
-		record:  r,
+		next:    r.data.next,
 	}
+}
+
+// Create a new io.ReadCloser for the Decompressped content of this stream.
+//
+// It is the caller's responsibility to call Close on the io.ReadCloser
+// when finished reading.
+func (r *Record) Decompress() io.Reader {
+	return eofCaster{flate.NewReader(r.NewReader())}
+}
+
+// Convenience method for efficiently decoding stream contents as JSON into
+// the destination variable.
+//
+// dst: pointer to destination variable
+func (r *Record) DecodeJSON(dst interface{}) (err error) {
+	return json.NewDecoder(r.Decompress()).Decode(dst)
+}
+
+// Return SHA1 hash of the content
+func (r *Record) SHA1() [sha1.Size]byte {
+	return r.hash
+}
+
+// Return strong ETag of content, if served as a compressed stream
+func (r *Record) ETag() string {
+	return r.eTag
+}
+
+// Return strong ETag of content, if served as a decompressed stream
+func (r *Record) ETagDecompressed() string {
+	return r.eTag[:len(r.eTag)-1] + `-uc"`
 }
 
 // Adapter for reading data from record w/o mutating it
 type recordReader struct {
 	current io.Reader
 	next    *componentNode
-	*record
 }
 
 func (r *recordReader) Read(p []byte) (n int, err error) {
@@ -116,23 +149,16 @@ func (r *recordReader) Read(p []byte) (n int, err error) {
 	return
 }
 
-// Adapter, that enables decoding the record as JSON
-type recordDecoder struct {
-	*record
+// Suppresses unexpected EOF errors resulting as a consequence of flate using
+// bufio
+type eofCaster struct {
+	io.Reader
 }
 
-func (r recordDecoder) DecodeJSON(dst interface{}) (err error) {
-	return json.NewDecoder(r.Decompress()).Decode(dst)
-}
-
-func (r recordDecoder) Decompress() io.Reader {
-	return flate.NewReader(r.NewReader())
-}
-
-func (r recordDecoder) SHA1() [sha1.Size]byte {
-	return r.record.hash
-}
-
-func (r recordDecoder) ETag() string {
-	return r.eTag
+func (e eofCaster) Read(p []byte) (n int, err error) {
+	n, err = e.Reader.Read(p)
+	if err == io.ErrUnexpectedEOF {
+		err = io.EOF
+	}
+	return
 }

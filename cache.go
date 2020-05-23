@@ -93,7 +93,7 @@ func (c *Cache) NewFrontend(get Getter) *Frontend {
 
 // Get or create a new record in the cache.
 // fresh=true, if record is freshly created and requires population.
-func (c *Cache) getRecord(loc recordLocation) (rec *record, fresh bool) {
+func (c *Cache) getRecord(loc recordLocation) (rec *Record, fresh bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -101,7 +101,7 @@ func (c *Cache) getRecord(loc recordLocation) (rec *record, fresh bool) {
 	if !ok {
 		recWithMeta = recordWithMeta{
 			node: c.lruList.Prepend(loc),
-			rec:  new(record),
+			rec:  new(Record),
 		}
 		recWithMeta.rec.semaphore.Init() // Block all reads until population
 	} else {
@@ -148,7 +148,7 @@ func (c *Cache) record(loc recordLocation) (recordWithMeta, bool) {
 }
 
 // Set record used memory
-func (c *Cache) setUsedMemory(src *record, loc recordLocation, memoryUsed int) {
+func (c *Cache) setUsedMemory(src *Record, loc recordLocation, memoryUsed int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

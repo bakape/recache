@@ -1,7 +1,6 @@
 package recache
 
 import (
-	"compress/flate"
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/binary"
@@ -26,36 +25,6 @@ type Key interface{}
 // Getter must be thread-safe.
 type Getter func(Key, *RecordWriter) error
 
-// Readable stream with support for io.WriterTo and conversion to
-// io.Reader interfaces
-type Streamer interface {
-	// Can be called safely from multiple goroutines
-	io.WriterTo
-
-	// Create a new io.Reader for this stream.
-	// Multiple instances of such an io.Reader can exist and be read
-	// concurrently.
-	NewReader() io.Reader
-
-	// Convenience method for efficiently decoding stream contents as JSON into
-	// the destination variable.
-	//
-	// dst: pointer to destination variable
-	DecodeJSON(dst interface{}) error
-
-	// Create a new io.ReadCloser for the Decompressped content of this stream.
-	//
-	// It is the caller's responsibility to call Close on the io.ReadCloser
-	// when finished reading.
-	Decompress() io.Reader
-
-	// Return SHA1 hash of the content
-	SHA1() [sha1.Size]byte
-
-	// Return strong etag of content
-	ETag() string
-}
-
 // A frontend for accessing the cache contents
 type Frontend struct {
 	id     int
@@ -64,7 +33,7 @@ type Frontend struct {
 }
 
 // Populates a record using the registered Getter
-func (f *Frontend) populate(k Key, rec *record) (err error) {
+func (f *Frontend) populate(k Key, rec *Record) (err error) {
 	rw := RecordWriter{
 		cache:    f.cache.id,
 		frontend: f.id,
@@ -125,7 +94,7 @@ func (f *Frontend) populate(k Key, rec *record) (err error) {
 }
 
 // Get a record by key and block until it has been generated
-func (f *Frontend) getGeneratedRecord(k Key) (rec *record, err error) {
+func (f *Frontend) getGeneratedRecord(k Key) (rec *Record, err error) {
 	loc := recordLocation{f.id, k}
 	rec, fresh := f.cache.getRecord(loc)
 	if fresh {
@@ -151,19 +120,15 @@ func (f *Frontend) getGeneratedRecord(k Key) (rec *record, err error) {
 	return
 }
 
-// Retrieve or generate data by key and return a consumable result Stream
-func (f *Frontend) Get(k Key) (s Streamer, err error) {
-	rec, err := f.getGeneratedRecord(k)
-	if err != nil {
-		return
-	}
-	s = recordDecoder{rec}
-	return
+// Retrieve or generate data by key and return cache Record
+func (f *Frontend) Get(k Key) (*Record, error) {
+	return f.getGeneratedRecord(k)
 }
 
 // Retrieve or generate data by key and write it to w.
 // Writes ETag to w and returns 304 on ETag match without writing data.
-// Sets "Content-Encoding" header to "deflate".
+// Sets "Content-Encoding" header to "deflate", if client support deflate
+// compressions
 func (f *Frontend) WriteHTTP(k Key, w http.ResponseWriter, r *http.Request,
 ) (n int64, err error) {
 	rec, err := f.getGeneratedRecord(k)
@@ -180,14 +145,14 @@ func (f *Frontend) WriteHTTP(k Key, w http.ResponseWriter, r *http.Request,
 	if !supportsDeflate {
 		// Different eTag to maintain strong eTag byte-equivalence guarantee by
 		// differing it from the compressed eTag.
-		eTag = eTag[:len(eTag)-2] + `-uc"`
+		eTag = rec.ETagDecompressed()
 	}
 	if r.Header.Get("If-None-Match") == eTag {
 		w.WriteHeader(304)
 		return
 	}
 	h := w.Header()
-	h.Set("ETag", rec.eTag)
+	h.Set("ETag", eTag)
 
 	if supportsDeflate {
 		// If client accepts deflate compression use efficient deflate stream
@@ -242,15 +207,9 @@ func (f *Frontend) WriteHTTP(k Key, w http.ResponseWriter, r *http.Request,
 		}
 		n += 6
 	} else {
-		// Streaming decompression for clients that don't accept deflate
+		// Streaming decompression for clients that don't support deflate
 		// compression
-
-		dr := flate.NewReader(rec.NewReader())
-		n, err = io.Copy(w, dr)
-		if err != nil {
-			return
-		}
-		err = dr.Close()
+		n, err = io.Copy(w, rec.Decompress())
 	}
 
 	return

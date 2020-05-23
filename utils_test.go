@@ -21,7 +21,7 @@ func assertEquals(t *testing.T, res, std interface{}) {
 	}
 }
 
-func decodeJSON(t *testing.T, src Streamer, dst interface{}) {
+func decodeJSON(t *testing.T, src *Record, dst interface{}) {
 	t.Helper()
 
 	err := src.DecodeJSON(&dst)
@@ -30,7 +30,7 @@ func decodeJSON(t *testing.T, src Streamer, dst interface{}) {
 	}
 }
 
-func assertJsonStringEquals(t *testing.T, src Streamer, std string) {
+func assertJsonStringEquals(t *testing.T, src *Record, std string) {
 	t.Helper()
 
 	var res string
