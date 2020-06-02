@@ -90,10 +90,7 @@ func (r *Record) NewReader() io.Reader {
 	}
 }
 
-// Create a new io.Reader for the Decompressped content of this stream.
-//
-// It is the caller's responsibility to call Close on the io.ReadCloser
-// when finished reading.
+// Create a new io.Reader for the Decompressped content of this stream
 func (r *Record) Decompress() io.Reader {
 	return eofCaster{flate.NewReader(r.NewReader())}
 }
