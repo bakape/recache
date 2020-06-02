@@ -90,7 +90,7 @@ func (r *Record) NewReader() io.Reader {
 	}
 }
 
-// Create a new io.ReadCloser for the Decompressped content of this stream.
+// Create a new io.Reader for the Decompressped content of this stream.
 //
 // It is the caller's responsibility to call Close on the io.ReadCloser
 // when finished reading.
