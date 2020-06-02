@@ -16,7 +16,7 @@ type frameDescriptor struct {
 }
 
 // Appending another frameDescriptor onto f
-func (f *frameDescriptor) Append(rhs frameDescriptor) {
+func (f *frameDescriptor) append(rhs frameDescriptor) {
 	f.size += rhs.size // Allowed to overflow
 
 	// Merge Adler32 checksums. Based on adler32_combine() from zlib.

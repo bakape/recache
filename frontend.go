@@ -69,7 +69,7 @@ func (f *Frontend) populate(k Key, rec *Record) (err error) {
 		for c := &rec.data; c != nil; c = c.next {
 			memoryUsed += c.Size()
 			if !first {
-				rec.frameDescriptor.Append(c.GetFrameDescriptor())
+				rec.frameDescriptor.append(c.GetFrameDescriptor())
 			} else {
 				first = false
 			}
