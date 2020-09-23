@@ -12,3 +12,6 @@
 *.out
 
 .vscode
+
+.bench_log
+benchmark_results.csv
