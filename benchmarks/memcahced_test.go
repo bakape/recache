@@ -7,9 +7,6 @@ import (
 	"github.com/bradfitz/gomemcache/memcache"
 )
 
-// TODO: whole page
-// TODO: part caching w/ concurrent requests
-
 // Memcached cacher implementation that always caches the whole page
 type memcachedWholePage struct {
 	versionedCacher
@@ -33,18 +30,25 @@ func (m *memcachedWholePage) init() (err error) {
 }
 
 func (m *memcachedWholePage) getPage() (out []byte, err error) {
-	k := m.getContentKey()
-	item, err := m.conn.Get(k)
+	return m.getOrGen(m.getPageKey(), generatePage)
+}
+
+// Get record from cache using `key` or generate a fresh record on cache miss
+// using `gen`
+func (m *memcachedWholePage) getOrGen(key string, gen func() ([]byte, error)) (
+	out []byte, err error,
+) {
+	item, err := m.conn.Get(key)
 	switch err {
 	case nil:
 		out = item.Value
 	case memcache.ErrCacheMiss:
-		out, err = generatePage()
+		out, err = gen()
 		if err != nil {
 			return
 		}
 		err = m.conn.Set(&memcache.Item{
-			Key:   k,
+			Key:   key,
 			Value: out,
 		})
 	}
@@ -54,4 +58,18 @@ func (m *memcachedWholePage) getPage() (out []byte, err error) {
 // Benchmark memcached with whole page caching
 func BenchmarkMemcachedWholePage(b *testing.B) {
 	runBenchmark(b, &memcachedWholePage{})
+}
+
+// Memcached cacher implementation that caches individual page parts
+type memcachedPartitioned struct {
+	memcachedWholePage
+}
+
+func (m *memcachedPartitioned) getPage() ([]byte, error) {
+	return pageFromPartitionedCache(m)
+}
+
+// Benchmark memcached with individual page part caching
+func BenchmarkMemcachedPartitioned(b *testing.B) {
+	runBenchmark(b, &memcachedPartitioned{})
 }

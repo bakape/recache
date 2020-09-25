@@ -8,9 +8,6 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
-// TODO: whole page
-// TODO: part caching w/ concurrent requests
-
 // Redis cacher implementation that always caches the whole page
 type redisWholePage struct {
 	versionedCacher
@@ -36,7 +33,7 @@ func (m *redisWholePage) init() (err error) {
 }
 
 func (m *redisWholePage) getPage() (out []byte, err error) {
-	k := m.getContentKey()
+	k := m.getPageKey()
 	item, err := m.conn.Get(context.Background(), k).Result()
 	switch err {
 	case nil:
@@ -51,7 +48,40 @@ func (m *redisWholePage) getPage() (out []byte, err error) {
 	return
 }
 
+// Get record from cache using `key` or generate a fresh record on cache miss
+// using `gen`
+func (m *redisWholePage) getOrGen(key string, gen func() ([]byte, error)) (
+	out []byte, err error,
+) {
+	item, err := m.conn.Get(context.Background(), key).Result()
+	switch err {
+	case nil:
+		out = []byte(item)
+	case redis.Nil:
+		out, err = gen()
+		if err != nil {
+			return
+		}
+		_, err = m.conn.Set(context.Background(), key, string(out), 0).Result()
+	}
+	return
+}
+
 // Benchmark Redis with whole page caching
 func BenchmarkRedisWholePage(b *testing.B) {
 	runBenchmark(b, &redisWholePage{})
+}
+
+// Redis cacher implementation that caches individual page parts
+type redisPartitioned struct {
+	redisWholePage
+}
+
+func (m *redisPartitioned) getPage() ([]byte, error) {
+	return pageFromPartitionedCache(m)
+}
+
+// Benchmark Redis with individual page part caching
+func BenchmarkRedisPartitioned(b *testing.B) {
+	runBenchmark(b, &memcachedPartitioned{})
 }
