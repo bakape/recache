@@ -5,4 +5,4 @@ rm -f .bench_log
 for	i in {1..10}; do
 	go test --bench . --benchtime 200x ./benchmarks/ >> .bench_log
 done
-benchstat --csv --sort name .bench_log > benchmark_results.csv
+go run ./print_values/main.go > benchmark_results.csv
