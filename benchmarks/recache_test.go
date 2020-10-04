@@ -7,13 +7,32 @@ import (
 	"github.com/bakape/recache/v5"
 )
 
-// redache cacher implementation
-type recacheCacher struct {
-	cache                                               *recache.Cache
-	configs, content, footer, header, pageContent, page *recache.Frontend
+// Common functionality of both whole page and partitioned recache benchmarks
+type recacheCommon struct {
+	cache *recache.Cache
+	page  *recache.Frontend
 }
 
-func (c *recacheCacher) init() error {
+func (c *recacheCommon) getPage() (out []byte, err error) {
+	var w bytes.Buffer
+	r, err := c.page.Get(nil)
+	if err != nil {
+		return
+	}
+	_, err = r.WriteTo(&w)
+	if err != nil {
+		return
+	}
+	return w.Bytes(), nil
+}
+
+// recache cacher implementation that caches individual page parts
+type recachePartitioned struct {
+	recacheCommon
+	configs, content, footer, header, pageContent *recache.Frontend
+}
+
+func (c *recachePartitioned) init() error {
 	c.cache = recache.NewCache(recache.CacheOptions{})
 
 	c.configs = c.cache.NewFrontend(
@@ -89,28 +108,49 @@ func (c *recacheCacher) init() error {
 	return nil
 }
 
-func (c *recacheCacher) resetConfigurationCache() {
+func (c *recachePartitioned) resetConfigurationCache() {
 	c.configs.EvictAll(0)
 }
 
-func (c *recacheCacher) resetContentCache() {
+func (c *recachePartitioned) resetContentCache() {
 	c.content.EvictAll(0)
 }
 
-func (c *recacheCacher) getPage() (out []byte, err error) {
-	var w bytes.Buffer
-	r, err := c.page.Get(nil)
-	if err != nil {
-		return
-	}
-	_, err = r.WriteTo(&w)
-	if err != nil {
-		return
-	}
-	return w.Bytes(), nil
+// Benchmark recache with whole page caching
+func BenchmarkRecachePartititoned(b *testing.B) {
+	runBenchmark(b, &recachePartitioned{})
 }
 
-// Benchmark Redis with whole page caching
-func BenchmarkRecache(b *testing.B) {
-	runBenchmark(b, &recacheCacher{})
+// recache cacher implementation that caches the entire page
+type recacheWholePage struct {
+	recacheCommon
+}
+
+func (c *recacheWholePage) init() error {
+	c.cache = recache.NewCache(recache.CacheOptions{})
+
+	c.page = c.cache.NewFrontend(
+		func(_ recache.Key, rw *recache.RecordWriter) (err error) {
+			b, err := generatePage()
+			if err != nil {
+				return
+			}
+			_, err = rw.Write(b)
+			return
+		},
+	)
+
+	return nil
+}
+
+func (c *recacheWholePage) resetConfigurationCache() {
+	c.page.EvictAll(0)
+}
+
+func (c *recacheWholePage) resetContentCache() {
+	c.resetConfigurationCache()
+}
+
+func BenchmarkRecacheWholePage(b *testing.B) {
+	runBenchmark(b, &recacheWholePage{})
 }
