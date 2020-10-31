@@ -194,6 +194,9 @@ func TestWriteHTTP(t *testing.T) {
 				t.Fatal(err)
 			}
 			switch c.etagMode {
+			case 1:
+				assertEquals(t, rec.Header().Get("ETag"), etag)
+				fallthrough
 			case 0:
 				etag = rec.Header().Get("ETag")
 				if etag == "" {
@@ -247,8 +250,6 @@ func TestWriteHTTP(t *testing.T) {
 						base64.RawStdEncoding.EncodeToString(h[:]),
 					),
 				)
-			case 1:
-				assertEquals(t, rec.Header().Get("ETag"), etag)
 			case 2:
 				assertEquals(t, rec.Code, 304)
 			}
