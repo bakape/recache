@@ -20,6 +20,22 @@ func TestEviction(t *testing.T) {
 		return caches[0], frontends[0]
 	}
 
+	t.Run("max-memory-based", func(t *testing.T) {
+		t.Parallel()
+
+		c, frontends := prepareCache()
+		c.memoryLimit = 1
+
+		_, err := frontends[2].Get(recursiveData{
+			Key: 1,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		assertConsistency(t, c)
+	})
+
 	cases := [...]struct {
 		name  string
 		timer time.Duration
@@ -178,22 +194,6 @@ func TestEviction(t *testing.T) {
 				})
 			})
 
-			t.Run("max-memory-based", func(t *testing.T) {
-				t.Parallel()
-
-				c, frontends := prepareCache()
-				c.memoryLimit = 1
-
-				_, err := frontends[2].Get(recursiveData{
-					Key: 1,
-				})
-				if err != nil {
-					t.Fatal(err)
-				}
-
-				assertConsistency(t, c)
-			})
-
 			t.Run("same cache recursion", func(t *testing.T) {
 				t.Parallel()
 
@@ -209,5 +209,4 @@ func TestEviction(t *testing.T) {
 			})
 		})
 	}
-
 }
