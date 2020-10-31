@@ -9,9 +9,9 @@ import (
 func TestEviction(t *testing.T) {
 	t.Parallel()
 
-	prepareCache := func() (*Cache, [3]*Frontend) {
+	prepareCache := func(memoryLimit uint) (*Cache, [3]*Frontend) {
 		var wg sync.WaitGroup
-		caches, frontends := prepareRecursion(0, 0)
+		caches, frontends := prepareRecursion(memoryLimit, 0)
 		testRecursion(t, &wg, caches, frontends)
 		wg.Wait()
 
@@ -23,17 +23,18 @@ func TestEviction(t *testing.T) {
 	t.Run("max-memory-based", func(t *testing.T) {
 		t.Parallel()
 
-		c, frontends := prepareCache()
-		c.memoryLimit = 1
-
-		_, err := frontends[2].Get(recursiveData{
-			Key: 1,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-
+		c, _ := prepareCache(1)
 		assertConsistency(t, c)
+
+		recs := 0
+		for _, f := range c.frontends {
+			recs += len(f)
+		}
+		// Because just inserted keys are never evicted, there will be one key
+		// per frontend
+		if recs > 3 {
+			t.Fatalf("stored record count not minimal: %d", recs)
+		}
 	})
 
 	cases := [...]struct {
@@ -59,7 +60,7 @@ func TestEviction(t *testing.T) {
 			t.Run("cache", func(t *testing.T) {
 				t.Parallel()
 
-				c, _ := prepareCache()
+				c, _ := prepareCache(0)
 
 				c.EvictAll(opts.timer)
 				await()
@@ -78,7 +79,7 @@ func TestEviction(t *testing.T) {
 			t.Run("frontend", func(t *testing.T) {
 				t.Parallel()
 
-				c, frontends := prepareCache()
+				c, frontends := prepareCache(0)
 				frontends[2].EvictAll(opts.timer)
 				await()
 
@@ -138,7 +139,7 @@ func TestEviction(t *testing.T) {
 				t.Run("by key", func(t *testing.T) {
 					t.Parallel()
 
-					c, frontends := prepareCache()
+					c, frontends := prepareCache(0)
 
 					frontends[0].Evict(opts.timer, recursiveData{
 						Cache:    0,
@@ -156,7 +157,7 @@ func TestEviction(t *testing.T) {
 				t.Run("by function", func(t *testing.T) {
 					t.Parallel()
 
-					c, frontends := prepareCache()
+					c, frontends := prepareCache(0)
 
 					err := frontends[0].EvictByFunc(
 						opts.timer,
@@ -178,7 +179,7 @@ func TestEviction(t *testing.T) {
 				t.Run("by function with error", func(t *testing.T) {
 					t.Parallel()
 
-					c, frontends := prepareCache()
+					c, frontends := prepareCache(0)
 
 					err := frontends[0].EvictByFunc(
 						opts.timer,
@@ -192,20 +193,6 @@ func TestEviction(t *testing.T) {
 					await()
 					assertConsistency(t, c)
 				})
-			})
-
-			t.Run("same cache recursion", func(t *testing.T) {
-				t.Parallel()
-
-				c, frontends := prepareCache()
-				c.memoryLimit = 1
-
-				_, err := frontends[2].Get(recursiveData{})
-				if err != nil {
-					t.Fatal(err)
-				}
-
-				assertConsistency(t, c)
 			})
 		})
 	}
