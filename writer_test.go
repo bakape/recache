@@ -1,6 +1,7 @@
 package recache
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"hash/adler32"
@@ -44,8 +45,17 @@ func TestBindJSON(t *testing.T) {
 func TestAdlerAppend(t *testing.T) {
 	t.Parallel()
 
-	buf1 := []byte("WAI")
-	buf2 := []byte("ZUMA")
+	buf1 := make([]byte, 128)
+	buf2 := make([]byte, 128)
+	for _, b := range [...][]byte{buf1, buf2} {
+		n, err := rand.Read(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n != 128 {
+			t.Fatalf("not enough bytes read: %d", n)
+		}
+	}
 
 	genDesc := func(b []byte) frameDescriptor {
 		return frameDescriptor{
