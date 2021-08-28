@@ -4,5 +4,3 @@
 
 # recache
 recursive compressed caching library
-
-TODO: copy some introduction text and diagrams from the paper
